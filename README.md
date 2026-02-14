@@ -2,6 +2,8 @@
 
 Context-aware chunk reordering for RAG pipelines. Mitigates the **lost-in-the-middle** phenomenon by strategically placing high-relevance passages at the beginning and end of LLM context windows.
 
+📖 **[Interactive Documentation & Live Demo](https://resonant-parfait-d49e6a.netlify.app)** — visual explanations, strategy comparisons, and a live reordering playground.
+
 ## Why?
 
 LLMs pay more attention to the start and end of their context window. When retrieved passages are ordered by relevance score alone, the most important information can end up buried in the middle where it's least likely to influence generation. This library fixes that.
@@ -306,6 +308,10 @@ interface Reranker {
   rerank(chunks: Chunk[], query: string): Promise<Chunk[]>;
 }
 ```
+
+## Documentation
+
+For interactive examples, visual explanations of the lost-in-the-middle problem, and a live reordering demo, visit the **[documentation site](https://resonant-parfait-d49e6a.netlify.app)**.
 
 ## Requirements
 

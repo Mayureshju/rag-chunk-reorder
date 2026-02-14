@@ -1,6 +1,6 @@
 {
   "name": "rag-chunk-reorder",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Context-aware chunk reordering library for RAG pipelines to mitigate the lost-in-the-middle phenomenon",
   "main": "dist/cjs/index.js",
   "types": "dist/cjs/index.d.ts",
@@ -43,7 +43,7 @@
   "bugs": {
     "url": "https://github.com/Mayureshju/rag-chunk-reorder/issues"
   },
-  "homepage": "https://github.com/Mayureshju/rag-chunk-reorder#readme",
+  "homepage": "https://resonant-parfait-d49e6a.netlify.app",
   "sideEffects": false,
   "devDependencies": {
     "@types/jest": "^30.0.0",
