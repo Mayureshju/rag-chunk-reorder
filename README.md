@@ -7,8 +7,8 @@
   <a href="https://opensource.org/licenses/MIT">
     <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT">
   </a>
-  <a href="https://github.com/Mayureshju/rag-chunk-reorder/actions">
-    <img src="https://github.com/Mayureshju/rag-chunk-reorder/workflows/Test/badge.svg" alt="Tests">
+  <a href="https://github.com/Mayureshju/rag-chunk-reorder/actions/workflows/test.yml">
+    <img src="https://github.com/Mayureshju/rag-chunk-reorder/actions/workflows/test.yml/badge.svg" alt="Tests">
   </a>
 </p>
 
@@ -30,6 +30,7 @@ Context-aware chunk reordering for RAG pipelines. Mitigates the **lost-in-the-mi
 - [Advanced Usage](#advanced-usage)
 - [API Reference](#api-reference)
 - [Evaluation Metrics](#evaluation-metrics)
+- [Integrations](#integrations)
 - [Performance Considerations](#performance-considerations)
 - [Best Practices](#best-practices)
 - [Requirements](#requirements)
@@ -126,6 +127,14 @@ Sorts by timestamp for temporal data like:
 
 Supply your own comparator function for domain-specific ordering.
 
+### 5. Auto
+
+Selects a strategy dynamically using query intent + metadata coverage:
+
+- Temporal query + high timestamp coverage -> `chronological`
+- Narrative query + source/section coverage -> `preserveOrder`
+- Otherwise -> `scoreSpread`
+
 ---
 
 ## Install
@@ -215,6 +224,24 @@ const chunks = [
 ];
 ```
 
+### Auto
+
+Automatically chooses `scoreSpread`, `preserveOrder`, or `chronological` based on:
+
+- query intent (factoid vs narrative vs temporal)
+- metadata coverage (`timestamp`, `sourceId`, `sectionIndex`)
+
+```typescript
+const reorderer = new Reorderer({
+  strategy: 'auto',
+  autoStrategy: {
+    temporalTimestampCoverageThreshold: 0.4,
+    narrativeSourceCoverageThreshold: 0.4,
+    narrativeSectionCoverageThreshold: 0.3,
+  },
+});
+```
+
 ### Custom
 
 Supply your own comparator for domain-specific ordering.
@@ -233,7 +260,14 @@ const reorderer = new Reorderer({
 ```typescript
 const reorderer = new Reorderer({
   // Strategy selection
-  strategy: 'scoreSpread', // 'scoreSpread' | 'preserveOrder' | 'chronological' | 'custom'
+  strategy: 'scoreSpread', // 'scoreSpread' | 'preserveOrder' | 'chronological' | 'custom' | 'auto'
+
+  // Auto strategy controls (used when strategy = 'auto')
+  autoStrategy: {
+    temporalTimestampCoverageThreshold: 0.4,
+    narrativeSourceCoverageThreshold: 0.4,
+    narrativeSectionCoverageThreshold: 0.3,
+  },
 
   // Scoring weights for priority computation
   weights: {
@@ -242,9 +276,10 @@ const reorderer = new Reorderer({
     section: 0.0, // weight for normalized sectionIndex
   },
 
-  // ScoreSpread options
-  startCount: 3, // chunks to place at start
-  endCount: 2, // chunks to place at end
+  // ScoreSpread options (optional)
+  startCount: 3, // top chunks to place at start
+  endCount: 2, // next top chunks to place at end
+  // If omitted, scoreSpread uses automatic edge interleaving
 
   // Filtering
   minScore: 0.5, // drop chunks below this score
@@ -259,12 +294,23 @@ const reorderer = new Reorderer({
   deduplicateThreshold: 0.85, // fuzzy similarity threshold (0-1, default: 1.0 = exact)
   deduplicateKeep: 'highestScore', // 'highestScore' | 'first' | 'last'
 
+  // Diversity reranking (MMR)
+  diversity: {
+    enabled: true,
+    lambda: 0.7, // relevance-vs-diversity tradeoff
+    sourceDiversityWeight: 0.15, // penalize repeating same source
+    sourceField: 'sourceId',
+  },
+
   // Grouping
   groupBy: 'sourceId', // group chunks by this metadata field
 
   // Reranker (async only)
   reranker: myReranker, // external cross-encoder reranker
   onRerankerError: (err) => console.warn('Reranker failed:', err),
+
+  // Budget packing policy for maxTokens/topK
+  packing: 'auto', // 'auto' | 'prefix' | 'edgeAware'
 
   // Debug
   includePriorityScore: true, // include computed priorityScore in output metadata
@@ -275,18 +321,25 @@ const reorderer = new Reorderer({
 
 | Option                 | Type                                                                    | Default         | Description                                                  |
 | ---------------------- | ----------------------------------------------------------------------- | --------------- | ------------------------------------------------------------ |
-| `strategy`             | `'scoreSpread'` \| `'preserveOrder'` \| `'chronological'` \| `'custom'` | `'scoreSpread'` | Reordering algorithm to use                                  |
-| `startCount`           | `number`                                                                | `3`             | Number of top chunks to place at the beginning (scoreSpread) |
-| `endCount`             | `number`                                                                | `2`             | Number of top chunks to place at the end (scoreSpread)       |
-| `minScore`             | `number`                                                                | `0`             | Minimum relevance score threshold                            |
+| `strategy`             | `'scoreSpread'` \| `'preserveOrder'` \| `'chronological'` \| `'custom'` \| `'auto'` | `'scoreSpread'` | Reordering algorithm to use                                  |
+| `startCount`           | `number`                                                                | `undefined`     | Number of top chunks to place at the beginning (scoreSpread) |
+| `endCount`             | `number`                                                                | `undefined`     | Number of next top chunks to place at the end (scoreSpread)  |
+| `minScore`             | `number`                                                                | `undefined`     | Minimum relevance score threshold                            |
 | `topK`                 | `number`                                                                | `Infinity`      | Maximum number of chunks to return                           |
 | `maxTokens`            | `number`                                                                | `undefined`     | Maximum token budget for output                              |
+| `packing`              | `'auto'` \| `'prefix'` \| `'edgeAware'`                                 | `'auto'`        | How token/topK budgets are packed                            |
 | `deduplicate`          | `boolean`                                                               | `false`         | Whether to remove duplicates                                 |
 | `deduplicateThreshold` | `number`                                                                | `1.0`           | Similarity threshold for fuzzy dedup (0-1)                   |
+| `diversity.enabled`    | `boolean`                                                               | `false`         | Enable MMR/source diversity reranking                        |
+| `diversity.lambda`     | `number` (0-1)                                                          | `0.7`           | Relevance-vs-diversity tradeoff                              |
+| `diversity.sourceField`| `string`                                                                | `'sourceId'`    | Metadata field used for source diversity                     |
 | `groupBy`              | `string`                                                                | `undefined`     | Metadata field to group chunks by                            |
 | `weights.similarity`   | `number`                                                                | `1.0`           | Weight for base relevance score                              |
 | `weights.time`         | `number`                                                                | `0.0`           | Weight for timestamp in priority calculation                 |
 | `weights.section`      | `number`                                                                | `0.0`           | Weight for sectionIndex in priority calculation              |
+| `autoStrategy.temporalTimestampCoverageThreshold` | `number` (0-1)                                        | `0.4`           | Timestamp coverage needed for temporal auto-routing          |
+| `autoStrategy.narrativeSourceCoverageThreshold`   | `number` (0-1)                                        | `0.4`           | Source coverage needed for narrative auto-routing            |
+| `autoStrategy.narrativeSectionCoverageThreshold`  | `number` (0-1)                                        | `0.3`           | Section coverage needed for narrative auto-routing           |
 | `includePriorityScore` | `boolean`                                                               | `false`         | Include computed priority in output metadata                 |
 
 ---
@@ -305,6 +358,22 @@ const result = reorderer.reorderSync(chunks, { strategy: 'chronological' });
 
 // Instance config is unchanged
 reorderer.getConfig().strategy; // 'scoreSpread'
+```
+
+### Auto Strategy Selection
+
+```typescript
+const reorderer = new Reorderer({
+  strategy: 'auto',
+  autoStrategy: {
+    temporalTimestampCoverageThreshold: 0.4,
+    narrativeSourceCoverageThreshold: 0.4,
+    narrativeSectionCoverageThreshold: 0.3,
+  },
+});
+
+// Chooses chronological when query is temporal and timestamps are well-covered
+const result = await reorderer.reorder(chunks, 'When did this happen?');
 ```
 
 ### Async Reorder with Reranker
@@ -329,6 +398,22 @@ const result = await reorderer.reorder(chunks, 'What is the capital of France?')
 ```
 
 If the reranker throws, the library falls back to original scores and calls `onRerankerError`.
+
+### Diversity-Aware Reranking (MMR + Source Diversity)
+
+```typescript
+const reorderer = new Reorderer({
+  strategy: 'scoreSpread',
+  diversity: {
+    enabled: true,
+    lambda: 0.7,
+    sourceDiversityWeight: 0.15,
+    sourceField: 'sourceId',
+  },
+});
+```
+
+This reranks chunks before final strategy application to reduce near-duplicate context waste.
 
 ### Streaming
 
@@ -372,6 +457,39 @@ const restored = deserializeChunks(json);
 // Round-trip: deserialize(serialize(chunks)) ≡ chunks
 ```
 
+### Answer-Level Evaluation Harness
+
+```typescript
+import { evaluateAnswerSet } from 'rag-chunk-reorder';
+
+const summary = evaluateAnswerSet([
+  {
+    prediction: 'Paris',
+    references: ['Paris'],
+    contexts: ['Paris is the capital of France.'],
+  },
+  {
+    prediction: 'Lyon',
+    references: ['Paris'],
+    contexts: ['Paris is the capital of France.'],
+  },
+]);
+
+console.log(summary.exactMatch, summary.f1, summary.faithfulness);
+```
+
+### Framework Adapters
+
+```typescript
+import {
+  reorderLangChainDocuments,
+  reorderLlamaIndexNodes,
+  reorderHaystackDocuments,
+} from 'rag-chunk-reorder';
+```
+
+See runnable examples in `examples/langchain.ts`, `examples/llamaindex.ts`, and `examples/haystack.ts`.
+
 ---
 
 ## API Reference
@@ -382,6 +500,7 @@ const restored = deserializeChunks(json);
 class Reorderer {
   constructor(config?: ReorderConfig);
   reorderSync(chunks: Chunk[], overrides?: Partial<ReorderConfig>): Chunk[];
+  reorderSync(chunks: Chunk[], query: string, overrides?: Partial<ReorderConfig>): Chunk[];
   reorder(chunks: Chunk[], query?: string, overrides?: Partial<ReorderConfig>): Promise<Chunk[]>;
   reorderStream(
     chunks: Chunk[],
@@ -404,10 +523,22 @@ class Reorderer {
 | `trigramSimilarity(a, b)`                       | Trigram Jaccard similarity   |
 | `serializeChunks(chunks)`                       | Serialize to JSON            |
 | `deserializeChunks(json)`                       | Deserialize from JSON        |
+| `detectQueryIntent(query, autoConfig)`          | Query intent detection       |
+| `metadataCoverage(chunks)`                      | Metadata coverage ratios     |
+| `resolveAutoStrategy(chunks, query, autoConfig)`| Auto strategy resolver       |
+| `rerankWithDiversity(chunks, diversityConfig)`  | MMR/source diversity rerank  |
 | `keyPointRecall(keyPoints, texts, options?)`    | Key-point recall metric      |
 | `keyPointPrecision(keyPoints, texts, options?)` | Key-point precision metric   |
 | `positionEffectiveness(chunks)`                 | Position effectiveness score |
 | `ndcg(scores)`                                  | Normalized DCG               |
+| `exactMatch(prediction, references)`            | Answer EM metric             |
+| `tokenF1(prediction, references)`               | Answer-level token F1        |
+| `faithfulness(prediction, contexts, options?)`  | Context-support faithfulness |
+| `evaluateAnswerSet(cases)`                      | Aggregate answer evaluation  |
+| `reorderLangChainDocuments(docs, options?)`     | LangChain adapter            |
+| `reorderLangChainPairs(pairs, options?)`        | LangChain scored-pairs adapter |
+| `reorderLlamaIndexNodes(nodes, options?)`       | LlamaIndex adapter           |
+| `reorderHaystackDocuments(docs, options?)`      | Haystack-shaped adapter      |
 
 ### Types
 
@@ -423,13 +554,16 @@ interface ChunkMetadata {
   timestamp?: number;
   page?: number;
   sectionIndex?: number;
-  sourceId?: string;
+  sourceId?: string | number | boolean;
   [key: string]: unknown;
 }
 
 interface Reranker {
   rerank(chunks: Chunk[], query: string): Promise<Chunk[]>;
 }
+
+type Strategy = 'scoreSpread' | 'preserveOrder' | 'chronological' | 'custom' | 'auto';
+type QueryIntent = 'factoid' | 'narrative' | 'temporal';
 ```
 
 ---
@@ -437,7 +571,16 @@ interface Reranker {
 ## Evaluation Metrics
 
 ```typescript
-import { keyPointRecall, keyPointPrecision, positionEffectiveness, ndcg } from 'rag-chunk-reorder';
+import {
+  keyPointRecall,
+  keyPointPrecision,
+  positionEffectiveness,
+  ndcg,
+  exactMatch,
+  tokenF1,
+  faithfulness,
+  evaluateAnswerSet,
+} from 'rag-chunk-reorder';
 
 const keyPoints = ['capital of France', 'Paris', 'Eiffel Tower'];
 const texts = reordered.map((c) => c.text);
@@ -456,6 +599,15 @@ const posEff = positionEffectiveness(scoredChunks);
 
 // Ranking quality (nDCG) — scores must be non-negative
 const rankQuality = ndcg(reordered.map((c) => c.score));
+
+// Answer-level metrics
+const em = exactMatch('Paris', ['Paris', 'City of Paris']);
+const f1 = tokenF1('Paris is capital of France', ['The capital of France is Paris']);
+const grounded = faithfulness('Paris is capital of France', texts);
+
+const answerSummary = evaluateAnswerSet([
+  { prediction: 'Paris', references: ['Paris'], contexts: texts },
+]);
 ```
 
 ---
@@ -468,11 +620,13 @@ The reordering pipeline processes chunks in this order:
 2. **Deduplicate** — remove exact/fuzzy duplicates
 3. **Validate** — check required fields (id, text, score)
 4. **Score** — compute priorityScore from weights + metadata
-5. **Group** (optional) — partition by metadata field
-6. **Strategy** — apply reordering algorithm
-7. **Strip internals** — remove priorityScore/originalIndex
-8. **Token budget** — trim to fit context window
-9. **topK** — limit output count
+5. **Diversity rerank** (optional) — apply MMR/source diversity
+6. **Auto strategy resolve** (optional) — pick strategy from query + metadata coverage
+7. **Group** (optional) — partition by metadata field
+8. **Strategy** — apply reordering algorithm
+9. **Strip internals** — remove priorityScore/originalIndex
+10. **Token budget** — apply `packing` policy (`auto`/`prefix`/`edgeAware`)
+11. **topK** — apply `packing` policy (`auto`/`prefix`/`edgeAware`)
 
 ---
 
@@ -484,6 +638,7 @@ The reordering pipeline processes chunks in this order:
 | PreserveOrder | O(n log n)      | Group + sort          |
 | Chronological | O(n log n)      | Sort by timestamp     |
 | Custom        | O(n log n)      | Depends on comparator |
+| MMR Diversity | O(n²)           | Pairwise similarity   |
 | Fuzzy Dedup   | O(n²)           | Pairwise comparison   |
 | Exact Dedup   | O(n)            | Hash-based            |
 
@@ -501,16 +656,36 @@ The reordering pipeline processes chunks in this order:
    - `scoreSpread`: General-purpose, works well with most RAG pipelines
    - `preserveOrder`: When document structure matters (technical docs, articles)
    - `chronological`: For temporal data (logs, chat, events)
+   - `auto`: Let query intent + metadata coverage route strategy dynamically
 
-2. **Tune startCount/endCount**: Start with defaults (3/2), adjust based on your topK
+2. **Tune startCount/endCount**: Set explicit values (for example 3/2) when you want deterministic head/tail placement; leave unset for automatic interleaving
 
 3. **Use rerankers**: For critical applications, add a cross-encoder reranker to improve relevance scores
 
-4. **Monitor metrics**: Use `positionEffectiveness` and `ndcg` to evaluate reordering quality
+4. **Enable diversity when topK is small**: `diversity.enabled: true` helps avoid near-duplicate context waste
 
-5. **Set minScore**: Filter low-quality chunks early to reduce processing overhead
+5. **Monitor answer-level metrics**: Track `exactMatch`, `tokenF1`, and `faithfulness` in addition to ranking metrics
 
-6. **Token budget**: Always set `maxTokens` to prevent context overflow
+6. **Set minScore**: Filter low-quality chunks early to reduce processing overhead
+
+7. **Token budget**: Always set `maxTokens` to prevent context overflow
+
+---
+
+## Integrations
+
+First-class adapters are available for framework-shaped objects:
+
+- `reorderLangChainDocuments()` and `reorderLangChainPairs()`
+- `reorderLlamaIndexNodes()`
+- `reorderHaystackDocuments()`
+
+See runnable integration examples:
+
+- `examples/langchain.ts`
+- `examples/llamaindex.ts`
+- `examples/haystack.ts`
+- `examples/evaluation.ts`
 
 ---
 

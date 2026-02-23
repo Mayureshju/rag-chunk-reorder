@@ -142,3 +142,16 @@ describe('Property 2: Normalization bounds', () => {
     );
   });
 });
+
+describe('Scorer robustness with malformed metadata values', () => {
+  it('should treat non-finite timestamp/sectionIndex metadata as missing values', () => {
+    const chunks: Chunk[] = [
+      { id: 'a', text: 'A', score: 0, metadata: { timestamp: 'bad' as unknown as number } },
+      { id: 'b', text: 'B', score: 0, metadata: { timestamp: 100 } },
+      { id: 'c', text: 'C', score: 0, metadata: { timestamp: 200 } },
+    ];
+
+    const scored = scoreChunks(chunks, { similarity: 0, time: 1, section: 0 });
+    expect(scored.map((c) => c.priorityScore)).toEqual([0, 0, 1]);
+  });
+});

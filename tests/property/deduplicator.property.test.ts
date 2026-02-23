@@ -1,6 +1,7 @@
 import * as fc from 'fast-check';
 import { deduplicateChunks, trigramSimilarity } from '../../src/deduplicator';
 import { Chunk } from '../../src/types';
+import { ValidationError } from '../../src/errors';
 
 const chunkArb: fc.Arbitrary<Chunk> = fc.record({
   id: fc.string({ minLength: 1 }),
@@ -123,5 +124,34 @@ describe('Trigram similarity properties', () => {
       ),
       { numRuns: 100 },
     );
+  });
+});
+
+describe('Deduplication ordering consistency', () => {
+  it("should match exact dedup survivor order for keep: 'last' when duplicates are exact", () => {
+    const chunks: Chunk[] = [
+      { id: 'a1', text: 'duplicate text', score: 0.1 },
+      { id: 'b', text: 'unique text', score: 0.5 },
+      { id: 'a2', text: 'duplicate text', score: 0.2 },
+    ];
+
+    const exact = deduplicateChunks(chunks, { threshold: 1.0, keep: 'last' }).map((c) => c.id);
+    const fuzzy = deduplicateChunks(chunks, { threshold: 0.9, keep: 'last' }).map((c) => c.id);
+
+    expect(exact).toEqual(['b', 'a2']);
+    expect(fuzzy).toEqual(exact);
+  });
+});
+
+describe('Deduplication option validation', () => {
+  it('should reject non-finite thresholds', () => {
+    const chunks: Chunk[] = [
+      { id: 'a', text: 'same', score: 0.9 },
+      { id: 'b', text: 'same', score: 0.8 },
+    ];
+
+    expect(() => deduplicateChunks(chunks, { threshold: NaN })).toThrow(ValidationError);
+    expect(() => deduplicateChunks(chunks, { threshold: Infinity })).toThrow(ValidationError);
+    expect(() => deduplicateChunks(chunks, { threshold: -0.1 })).toThrow(ValidationError);
   });
 });

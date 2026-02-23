@@ -1,4 +1,5 @@
 import { Chunk } from './types';
+import { ValidationError } from './errors';
 
 /** Options for chunk deduplication. */
 export interface DeduplicateOptions {
@@ -67,6 +68,15 @@ export function deduplicateChunks(chunks: Chunk[], options?: DeduplicateOptions)
   const threshold = options?.threshold ?? 1.0;
   const keep = options?.keep ?? 'highestScore';
 
+  if (typeof threshold !== 'number' || !Number.isFinite(threshold) || threshold < 0 || threshold > 1) {
+    throw new ValidationError('deduplicateThreshold must be a number between 0 and 1');
+  }
+  if (keep !== 'highestScore' && keep !== 'first' && keep !== 'last') {
+    throw new ValidationError(
+      `Invalid deduplicateKeep '${keep}'. Valid values: highestScore, first, last`,
+    );
+  }
+
   if (chunks.length <= 1) return [...chunks];
 
   // Fast path: exact dedup only
@@ -108,11 +118,12 @@ function deduplicateFuzzy(
 ): Chunk[] {
   // Track which indices have been merged into another
   const removed = new Set<number>();
-  // Map from survivor index to the survivor chunk (may have been replaced)
-  const survivors = new Map<number, Chunk>();
+  // Map from survivor anchor index to selected survivor payload.
+  // orderIndex tracks the true index of the currently selected survivor.
+  const survivors = new Map<number, { chunk: Chunk; orderIndex: number }>();
 
   for (let i = 0; i < chunks.length; i++) {
-    survivors.set(i, chunks[i]);
+    survivors.set(i, { chunk: chunks[i], orderIndex: i });
   }
 
   for (let i = 0; i < chunks.length; i++) {
@@ -123,12 +134,20 @@ function deduplicateFuzzy(
 
       const sim = trigramSimilarity(chunks[i].text, chunks[j].text);
       if (sim >= threshold) {
-        const survivorChunk = survivors.get(i)!;
-        const candidateChunk = survivors.get(j)!;
+        const survivor = survivors.get(i)!;
+        const candidate = survivors.get(j)!;
 
-        if (shouldReplace(survivorChunk, i, candidateChunk, j, keep)) {
+        if (
+          shouldReplace(
+            survivor.chunk,
+            survivor.orderIndex,
+            candidate.chunk,
+            candidate.orderIndex,
+            keep,
+          )
+        ) {
           // j wins: replace i's survivor with j's chunk, remove j
-          survivors.set(i, candidateChunk);
+          survivors.set(i, candidate);
         }
         // Either way, j is merged into i's cluster
         removed.add(j);
@@ -138,9 +157,9 @@ function deduplicateFuzzy(
   }
 
   // Return survivors in original order
-  return Array.from(survivors.entries())
-    .sort(([a], [b]) => a - b)
-    .map(([, chunk]) => chunk);
+  return Array.from(survivors.values())
+    .sort((a, b) => a.orderIndex - b.orderIndex)
+    .map((entry) => entry.chunk);
 }
 
 function shouldReplace(

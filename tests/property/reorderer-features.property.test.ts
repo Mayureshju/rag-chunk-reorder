@@ -1,6 +1,7 @@
 import * as fc from 'fast-check';
 import { Reorderer } from '../../src/reorderer';
 import { Chunk } from '../../src/types';
+import { ValidationError } from '../../src/errors';
 
 const chunkArb: fc.Arbitrary<Chunk> = fc.record({
   id: fc.string({ minLength: 1 }),
@@ -43,25 +44,94 @@ describe('minScore filtering', () => {
   });
 });
 
+describe('Validation before filtering and deduplication', () => {
+  it('should throw ValidationError for non-object chunk entries', () => {
+    const reorderer = new Reorderer();
+    const malformed = [null] as unknown as Chunk[];
+    expect(() => reorderer.reorderSync(malformed)).toThrow(ValidationError);
+  });
+
+  it('should throw ValidationError even when minScore would otherwise filter malformed chunks', () => {
+    const reorderer = new Reorderer({ minScore: 1 });
+    const malformed = [{ id: 'x', text: 'bad', score: undefined }] as unknown as Chunk[];
+
+    expect(() => reorderer.reorderSync(malformed)).toThrow(ValidationError);
+  });
+
+  it('should throw ValidationError (not TypeError) for malformed text in fuzzy deduplication path', () => {
+    const reorderer = new Reorderer({ deduplicate: true, deduplicateThreshold: 0.9 });
+    const malformed = [
+      { id: 'a', text: 'ok', score: 1 },
+      { id: 'b', text: undefined, score: 0.5 },
+    ] as unknown as Chunk[];
+
+    try {
+      reorderer.reorderSync(malformed);
+      fail('Expected reorderSync to throw');
+    } catch (error) {
+      expect(error).toBeInstanceOf(ValidationError);
+    }
+  });
+
+  it('should also reject malformed chunks in async reorder()', async () => {
+    const reorderer = new Reorderer({ minScore: 1 });
+    const malformed = [{ id: 'x', text: 'bad', score: undefined }] as unknown as Chunk[];
+
+    await expect(reorderer.reorder(malformed, 'query')).rejects.toThrow(ValidationError);
+  });
+
+  it('should reject non-finite metadata timestamp values', () => {
+    const reorderer = new Reorderer();
+    const malformed = [
+      { id: 'a', text: 'A', score: 1, metadata: { timestamp: 'bad' } },
+    ] as unknown as Chunk[];
+
+    expect(() => reorderer.reorderSync(malformed)).toThrow(ValidationError);
+  });
+
+  it('should reject non-finite metadata sectionIndex values', () => {
+    const reorderer = new Reorderer();
+    const malformed = [
+      { id: 'a', text: 'A', score: 1, metadata: { sectionIndex: NaN } },
+    ] as unknown as Chunk[];
+
+    expect(() => reorderer.reorderSync(malformed)).toThrow(ValidationError);
+  });
+
+  it('should allow primitive non-string metadata.sourceId values', () => {
+    const reorderer = new Reorderer({ strategy: 'scoreSpread' });
+    const chunks = [
+      { id: 'a', text: 'A', score: 1, metadata: { sourceId: 123 } },
+      { id: 'b', text: 'B', score: 0.9, metadata: { sourceId: true } },
+    ] as unknown as Chunk[];
+
+    expect(() => reorderer.reorderSync(chunks)).not.toThrow();
+  });
+});
+
 // Feature: chunk-reordering-library — maxTokens token budget
 // Validates: output respects token budget and preserves order
 describe('maxTokens token budget', () => {
-  it('should not exceed maxTokens and preserve reorder order', () => {
+  it('should not exceed maxTokens and preserve reorder order for non-scoreSpread strategies', () => {
     fc.assert(
       fc.property(
         fc.array(chunkArb, { minLength: 1, maxLength: 20 }),
         fc.integer({ min: 1, max: 500 }),
         (chunks, maxTokens) => {
           const tokenCounter = (text: string) => text.length;
-          const reorderer = new Reorderer({ maxTokens, tokenCounter });
+          const reorderer = new Reorderer({
+            strategy: 'chronological',
+            maxTokens,
+            tokenCounter,
+          });
           const result = reorderer.reorderSync(chunks);
 
           // Total tokens should not exceed budget
           const totalTokens = result.reduce((sum, c) => sum + tokenCounter(c.text), 0);
           expect(totalTokens).toBeLessThanOrEqual(maxTokens);
 
-          // Result should be a prefix of the full reorder (token budget trims from the end)
-          const fullReorderer = new Reorderer();
+          // For non-scoreSpread strategies, token budget trims from the tail
+          const fullReorderer = new Reorderer({ strategy: 'chronological' });
           const fullResult = fullReorderer.reorderSync(chunks);
           for (let i = 0; i < result.length; i++) {
             expect(result[i].id).toBe(fullResult[i].id);
@@ -70,6 +140,22 @@ describe('maxTokens token budget', () => {
       ),
       { numRuns: 100 },
     );
+  });
+
+  it('should throw ValidationError when tokenCounter returns NaN', () => {
+    const reorderer = new Reorderer({ maxTokens: 1, tokenCounter: () => NaN });
+    const chunks: Chunk[] = [{ id: 'a', text: 'A', score: 1 }];
+    expect(() => reorderer.reorderSync(chunks)).toThrow(ValidationError);
+  });
+
+  it('should throw ValidationError when tokenCounter returns a negative value', () => {
+    const reorderer = new Reorderer({
+      strategy: 'chronological',
+      maxTokens: 5,
+      tokenCounter: () => -1,
+    });
+    const chunks: Chunk[] = [{ id: 'a', text: 'A', score: 1 }];
+    expect(() => reorderer.reorderSync(chunks)).toThrow(ValidationError);
   });
 });
 
@@ -166,20 +252,20 @@ describe('groupBy combined with minScore and deduplicate', () => {
 // Feature: chunk-reordering-library — topK limit
 // Validates: topK correctly limits the number of output chunks
 describe('topK limit', () => {
-  it('should return at most topK chunks', () => {
+  it('should return at most topK chunks for non-scoreSpread strategies', () => {
     fc.assert(
       fc.property(
         fc.array(chunkArb, { minLength: 1, maxLength: 30 }),
         fc.integer({ min: 1, max: 20 }),
         (chunks, topK) => {
-          const reorderer = new Reorderer({ topK });
+          const reorderer = new Reorderer({ strategy: 'chronological', topK });
           const result = reorderer.reorderSync(chunks);
 
           expect(result.length).toBeLessThanOrEqual(topK);
           expect(result.length).toBe(Math.min(chunks.length, topK));
 
-          // Result should be a prefix of the full reorder
-          const fullReorderer = new Reorderer();
+          // For non-scoreSpread strategies, topK trims from the tail
+          const fullReorderer = new Reorderer({ strategy: 'chronological' });
           const fullResult = fullReorderer.reorderSync(chunks);
           for (let i = 0; i < result.length; i++) {
             expect(result[i].id).toBe(fullResult[i].id);
@@ -209,5 +295,42 @@ describe('topK limit', () => {
       ),
       { numRuns: 100 },
     );
+  });
+});
+
+// Feature: chunk-reordering-library — scoreSpread edge preservation under budgets
+// Validates: scoreSpread keeps high-priority chunks at both context edges when applying limits
+describe('scoreSpread budget edge preservation', () => {
+  const chunks: Chunk[] = [
+    { id: 'a', text: 'A', score: 1.0 },
+    { id: 'b', text: 'B', score: 0.9 },
+    { id: 'c', text: 'C', score: 0.8 },
+    { id: 'd', text: 'D', score: 0.7 },
+    { id: 'e', text: 'E', score: 0.6 },
+  ];
+
+  it('should keep both leading and trailing high-priority placements with topK', () => {
+    const reorderer = new Reorderer({
+      strategy: 'scoreSpread',
+      startCount: 1,
+      endCount: 1,
+      topK: 2,
+    });
+    const result = reorderer.reorderSync(chunks);
+
+    expect(result.map((c) => c.id)).toEqual(['a', 'b']);
+  });
+
+  it('should keep both leading and trailing high-priority placements with maxTokens', () => {
+    const reorderer = new Reorderer({
+      strategy: 'scoreSpread',
+      startCount: 1,
+      endCount: 1,
+      maxTokens: 2,
+      tokenCounter: () => 1,
+    });
+    const result = reorderer.reorderSync(chunks);
+
+    expect(result.map((c) => c.id)).toEqual(['a', 'b']);
   });
 });

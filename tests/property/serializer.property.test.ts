@@ -1,6 +1,7 @@
 import * as fc from 'fast-check';
 import { serializeChunks, deserializeChunks } from '../../src/serializer';
 import { Chunk } from '../../src/types';
+import { ValidationError } from '../../src/errors';
 
 const chunkArb: fc.Arbitrary<Chunk> = fc.record({
   id: fc.string({ minLength: 1 }),
@@ -57,5 +58,10 @@ describe('deserializeChunks rejects invalid chunks', () => {
     // JSON.stringify converts NaN/Infinity to null, so score becomes null after parse
     const json = '[{"id":"a","text":"hello","score":null}]';
     expect(() => deserializeChunks(json)).toThrow();
+  });
+
+  it('should throw ValidationError for non-object entries', () => {
+    const json = '[null]';
+    expect(() => deserializeChunks(json)).toThrow(ValidationError);
   });
 });

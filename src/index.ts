@@ -4,8 +4,12 @@ export type {
   ChunkMetadata,
   ScoredChunk,
   Strategy,
+  QueryIntent,
   CustomComparator,
   ScoringWeights,
+  AutoStrategyConfig,
+  DiversityConfig,
+  PackingStrategy,
   ReorderConfig,
   Reranker,
 } from './types';
@@ -30,8 +34,37 @@ export {
   keyPointPrecision,
   positionEffectiveness,
   ndcg,
+  exactMatch,
+  tokenF1,
+  faithfulness,
+  evaluateAnswerSet,
 } from './evaluator';
-export type { EvalOptions } from './evaluator';
+export type {
+  EvalOptions,
+  AnswerEvalCase,
+  AnswerEvalSummary,
+  FaithfulnessOptions,
+} from './evaluator';
+
+// Auto strategy
+export { detectQueryIntent, metadataCoverage, resolveAutoStrategy } from './selector';
+export type { MetadataCoverage } from './selector';
+
+// Diversity reranking
+export { rerankWithDiversity } from './diversity';
+
+// Adapters
+export {
+  reorderLangChainDocuments,
+  reorderLangChainPairs,
+  reorderLlamaIndexNodes,
+  reorderHaystackDocuments,
+} from './adapters';
+export type {
+  LangChainDocumentLike,
+  LlamaIndexNodeLike,
+  HaystackDocumentLike,
+} from './adapters';
 
 // Errors
 export { ValidationError } from './errors';

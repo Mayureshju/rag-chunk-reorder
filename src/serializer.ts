@@ -25,23 +25,31 @@ export function deserializeChunks(json: string): Chunk[] {
     throw new ValidationError('Failed to parse JSON: expected an array');
   }
 
-  return parsed.map((item: Record<string, unknown>, index: number) => {
-    if (typeof item.id !== 'string' || item.id.length === 0) {
+  return parsed.map((item: unknown, index: number) => {
+    if (typeof item !== 'object' || item === null || Array.isArray(item)) {
+      throw new ValidationError(
+        `Deserialized chunk at index ${index} must be a plain object`,
+      );
+    }
+
+    const chunk = item as Record<string, unknown>;
+
+    if (typeof chunk.id !== 'string' || chunk.id.length === 0) {
       throw new ValidationError(
         `Deserialized chunk at index ${index} is missing or has an empty 'id'`,
       );
     }
-    if (typeof item.text !== 'string') {
+    if (typeof chunk.text !== 'string') {
       throw new ValidationError(
         `Deserialized chunk at index ${index} is missing required field 'text'`,
       );
     }
-    if (typeof item.score !== 'number' || !Number.isFinite(item.score as number)) {
+    if (typeof chunk.score !== 'number' || !Number.isFinite(chunk.score as number)) {
       throw new ValidationError(
         `Deserialized chunk at index ${index} has an invalid 'score' (must be a finite number)`,
       );
     }
 
-    return item as unknown as Chunk;
+    return chunk as unknown as Chunk;
   });
 }
