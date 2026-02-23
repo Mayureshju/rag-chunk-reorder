@@ -4,6 +4,9 @@
   <a href="https://www.npmjs.com/package/rag-chunk-reorder">
     <img src="https://img.shields.io/npm/v/rag-chunk-reorder.svg" alt="npm version">
   </a>
+  <a href="https://www.npmjs.com/package/rag-chunk-reorder">
+    <img src="https://img.shields.io/npm/dm/rag-chunk-reorder.svg" alt="npm downloads">
+  </a>
   <a href="https://opensource.org/licenses/MIT">
     <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT">
   </a>
@@ -15,6 +18,8 @@
 Context-aware chunk reordering for RAG pipelines. Mitigates the **lost-in-the-middle** phenomenon by strategically placing high-relevance passages at the beginning and end of LLM context windows.
 
 📖 **[Interactive Documentation & Live Demo](https://resonant-parfait-d49e6a.netlify.app)** — visual explanations, strategy comparisons, and a live reordering playground.
+
+**Quick links:** [Docs](https://resonant-parfait-d49e6a.netlify.app) · [GitHub](https://github.com/Mayureshju/rag-chunk-reorder) · [npm](https://www.npmjs.com/package/rag-chunk-reorder)
 
 ---
 
@@ -31,9 +36,12 @@ Context-aware chunk reordering for RAG pipelines. Mitigates the **lost-in-the-mi
 - [API Reference](#api-reference)
 - [Evaluation Metrics](#evaluation-metrics)
 - [Integrations](#integrations)
+- [Recipes](#recipes)
+- [Benchmarks](#benchmarks)
 - [Performance Considerations](#performance-considerations)
 - [Best Practices](#best-practices)
 - [Requirements](#requirements)
+- [Release Cadence](#release-cadence)
 - [License](#license)
 
 ---
@@ -686,6 +694,31 @@ See runnable integration examples:
 - `examples/llamaindex.ts`
 - `examples/haystack.ts`
 - `examples/evaluation.ts`
+- `examples/langchain-pinecone.ts`
+- `examples/llamaindex-qdrant.ts`
+- `examples/openai-responses.ts`
+
+---
+
+## Recipes
+
+Drop-in recipes for popular stacks live in the `examples/` folder:
+
+- LangChain + Pinecone
+- LlamaIndex + Qdrant
+- OpenAI Responses API
+
+---
+
+## Benchmarks
+
+Reproducible scripts and datasets are included in `bench/`.
+
+Run:
+
+```bash
+npm run bench
+```
 
 ---
 
@@ -693,6 +726,12 @@ See runnable integration examples:
 
 - Node.js >= 18.0.0
 - TypeScript >= 5.0 (for type definitions)
+
+---
+
+## Release Cadence
+
+Weekly release PRs are prepared automatically, with changelog updates in `CHANGELOG.md`. Tags drive npm publishing with provenance.
 
 ---
 

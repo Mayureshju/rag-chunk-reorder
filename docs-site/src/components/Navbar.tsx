@@ -2,9 +2,13 @@ const links = [
   { id: 'problem', label: 'Problem' },
   { id: 'solution', label: 'Solution' },
   { id: 'demo', label: 'Demo' },
+  { id: 'demo-clip', label: 'Result' },
   { id: 'strategies', label: 'Strategies' },
+  { id: 'recipes', label: 'Recipes' },
   { id: 'pipeline', label: 'Pipeline' },
   { id: 'features', label: 'Features' },
+  { id: 'benchmarks', label: 'Benchmarks' },
+  { id: 'social-proof', label: 'Proof' },
   { id: 'install', label: 'Install' },
   { id: 'api', label: 'API' },
 ];

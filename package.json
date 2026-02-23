@@ -1,7 +1,7 @@
 {
   "name": "rag-chunk-reorder",
   "version": "0.1.1",
-  "description": "Context-aware chunk reordering library for RAG pipelines to mitigate the lost-in-the-middle phenomenon",
+  "description": "RAG chunk reordering, retrieval reranking, and context packing to mitigate lost-in-the-middle in LLM context windows",
   "main": "dist/cjs/index.js",
   "types": "dist/cjs/index.d.ts",
   "exports": {
@@ -21,6 +21,7 @@
   ],
   "scripts": {
     "build": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.cjs.json && tsc -p tsconfig.esm.json && echo '{\"type\":\"module\"}' > dist/esm/package.json",
+    "bench": "npm run build && node bench/run.js",
     "prepublishOnly": "npm run build && npm test",
     "test": "jest",
     "lint": "eslint src/ tests/",
@@ -29,11 +30,18 @@
   "keywords": [
     "rag",
     "llm",
-    "chunk",
-    "reorder",
     "retrieval-augmented-generation",
+    "retrieval-reranking",
+    "reranking",
+    "rerank",
+    "context-packing",
+    "context-window",
+    "llm-context",
+    "context-reordering",
+    "chunk-reordering",
     "lost-in-the-middle",
-    "context-reordering"
+    "ranking",
+    "reranker"
   ],
   "license": "MIT",
   "repository": {
