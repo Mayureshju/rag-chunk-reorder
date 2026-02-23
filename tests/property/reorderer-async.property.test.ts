@@ -41,6 +41,30 @@ describe('onRerankerError callback', () => {
       { numRuns: 100 },
     );
   });
+
+  it('should call onRerankerError and fall back when reranker returns invalid chunks', async () => {
+    const errors: unknown[] = [];
+    const reranker: Reranker = {
+      rerank: async (chunks) =>
+        chunks.map((c, i) => ({ ...c, score: i === 0 ? NaN : c.score })),
+    };
+
+    const reorderer = new Reorderer({
+      reranker,
+      onRerankerError: (err) => errors.push(err),
+    });
+
+    const chunks: Chunk[] = [
+      { id: 'a', text: 'A', score: 0.9 },
+      { id: 'b', text: 'B', score: 0.8 },
+    ];
+
+    const result = await reorderer.reorder(chunks, 'test query');
+    const expected = new Reorderer().reorderSync(chunks);
+
+    expect(errors.length).toBe(1);
+    expect(result.map((c) => c.id)).toEqual(expected.map((c) => c.id));
+  });
 });
 
 // Feature: chunk-reordering-library — includePriorityScore option
@@ -236,6 +260,26 @@ describe('getConfig nested weights immutability', () => {
   });
 });
 
+// Feature: chunk-reordering-library — getConfig auto/diversity immutability
+// Validates: mutating autoStrategy/diversity in getConfig() does not affect the instance
+describe('getConfig auto/diversity immutability', () => {
+  it('should not affect instance when autoStrategy/diversity are mutated', () => {
+    const reorderer = new Reorderer({
+      strategy: 'auto',
+      autoStrategy: { temporalQueryTerms: ['when'] },
+      diversity: { enabled: true, lambda: 0.8 },
+    });
+
+    const configCopy = reorderer.getConfig();
+    configCopy.autoStrategy!.temporalQueryTerms!.push('timeline');
+    configCopy.diversity!.lambda = 0.1;
+
+    const afterMutation = reorderer.getConfig();
+    expect(afterMutation.autoStrategy!.temporalQueryTerms).toEqual(['when']);
+    expect(afterMutation.diversity!.lambda).toBe(0.8);
+  });
+});
+
 // Feature: chunk-reordering-library — reorder() validates overrides on empty input
 // Validates: async reorder() validates overrides consistently with reorderSync()
 describe('reorder() validates overrides on empty input', () => {
@@ -301,5 +345,29 @@ describe('reorderSync rejects reranker override', () => {
       ),
       { numRuns: 100 },
     );
+  });
+});
+
+// Feature: chunk-reordering-library — custom -> auto override compatibility
+// Validates: per-call strategy overrides should not fail due stale customComparator
+describe('custom strategy override to auto', () => {
+  it('should allow overriding custom strategy instance to auto per-call', async () => {
+    const reorderer = new Reorderer({
+      strategy: 'custom',
+      customComparator: (a, b) => b.score - a.score,
+    });
+
+    const chunks: Chunk[] = [
+      { id: '1', text: 'A', score: 0.9, metadata: { timestamp: 2 } },
+      { id: '2', text: 'B', score: 0.8, metadata: { timestamp: 1 } },
+    ];
+
+    await expect(
+      reorderer.reorder(chunks, 'When did this happen?', { strategy: 'auto' }),
+    ).resolves.toHaveLength(2);
+
+    expect(() =>
+      reorderer.reorderSync(chunks, { strategy: 'auto' }),
+    ).not.toThrow();
   });
 });

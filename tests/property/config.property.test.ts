@@ -5,7 +5,7 @@ import { ValidationError } from '../../src/errors';
 // Feature: chunk-reordering-library, Property 17: Invalid strategy name rejection
 // Validates: Requirements 10.3
 describe('Property 17: Invalid strategy name rejection', () => {
-  const validStrategies = ['scoreSpread', 'preserveOrder', 'chronological', 'custom'];
+  const validStrategies = ['scoreSpread', 'preserveOrder', 'chronological', 'custom', 'auto'];
 
   it('should throw ValidationError for any string that is not a valid strategy name', () => {
     fc.assert(
@@ -24,7 +24,7 @@ describe('Property 17: Invalid strategy name rejection', () => {
   it('should not throw for valid strategy names (without custom needing comparator)', () => {
     fc.assert(
       fc.property(
-        fc.constantFrom('scoreSpread', 'preserveOrder', 'chronological'),
+        fc.constantFrom('scoreSpread', 'preserveOrder', 'chronological', 'auto'),
         (validStrategy) => {
           expect(() => validateConfig({ strategy: validStrategy as any })).not.toThrow();
         },
@@ -125,6 +125,28 @@ describe('Negative weights rejection', () => {
       ),
       { numRuns: 100 },
     );
+  });
+});
+
+// Feature: chunk-reordering-library — weights NaN/Infinity rejection
+// Validates: weights.similarity/time/section must be finite numbers
+describe('weights NaN/Infinity rejection', () => {
+  it('should reject NaN similarity weight', () => {
+    expect(() => validateConfig({ weights: { similarity: NaN } })).toThrow(ValidationError);
+  });
+
+  it('should reject Infinity time weight', () => {
+    expect(() => validateConfig({ weights: { time: Infinity } })).toThrow(ValidationError);
+  });
+
+  it('should reject -Infinity section weight', () => {
+    expect(() => validateConfig({ weights: { section: -Infinity } })).toThrow(ValidationError);
+  });
+});
+
+describe('deduplicateThreshold finite validation', () => {
+  it('should reject NaN deduplicateThreshold', () => {
+    expect(() => validateConfig({ deduplicateThreshold: NaN })).toThrow(ValidationError);
   });
 });
 
@@ -248,5 +270,65 @@ describe('startCount/endCount integer validation', () => {
 
   it('should throw ValidationError for Infinity endCount', () => {
     expect(() => validateConfig({ endCount: Infinity })).toThrow(ValidationError);
+  });
+});
+
+// Feature: chunk-reordering-library — packing strategy validation
+// Validates: packing accepts only auto/prefix/edgeAware
+describe('packing strategy validation', () => {
+  it('should accept valid packing values', () => {
+    expect(() => validateConfig({ packing: 'auto' })).not.toThrow();
+    expect(() => validateConfig({ packing: 'prefix' })).not.toThrow();
+    expect(() => validateConfig({ packing: 'edgeAware' })).not.toThrow();
+  });
+
+  it('should reject invalid packing values', () => {
+    expect(() => validateConfig({ packing: 'invalid' as any })).toThrow(ValidationError);
+  });
+});
+
+// Feature: chunk-reordering-library — autoStrategy threshold validation
+// Validates: auto strategy thresholds are bounded in [0, 1]
+describe('autoStrategy validation', () => {
+  it('should accept valid thresholds', () => {
+    expect(() =>
+      validateConfig({
+        strategy: 'auto',
+        autoStrategy: {
+          temporalTimestampCoverageThreshold: 0.5,
+          narrativeSourceCoverageThreshold: 0.4,
+          narrativeSectionCoverageThreshold: 0.3,
+        },
+      }),
+    ).not.toThrow();
+  });
+
+  it('should reject out-of-range thresholds', () => {
+    expect(() =>
+      validateConfig({
+        strategy: 'auto',
+        autoStrategy: { temporalTimestampCoverageThreshold: 1.5 },
+      }),
+    ).toThrow(ValidationError);
+  });
+});
+
+// Feature: chunk-reordering-library — diversity config validation
+// Validates: diversity lambda must be between 0 and 1
+describe('diversity validation', () => {
+  it('should accept valid diversity config', () => {
+    expect(() =>
+      validateConfig({
+        diversity: { enabled: true, lambda: 0.7, sourceDiversityWeight: 0.2, sourceField: 'sourceId' },
+      }),
+    ).not.toThrow();
+  });
+
+  it('should reject invalid lambda', () => {
+    expect(() =>
+      validateConfig({
+        diversity: { enabled: true, lambda: -0.1 },
+      }),
+    ).toThrow(ValidationError);
   });
 });

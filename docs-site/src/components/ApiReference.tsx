@@ -31,6 +31,10 @@ export function ApiReference() {
     { name: 'trigramSimilarity(a, b)', desc: 'Trigram Jaccard similarity between two strings' },
     { name: 'serializeChunks(chunks)', desc: 'Serialize chunks to JSON string' },
     { name: 'deserializeChunks(json)', desc: 'Deserialize chunks from JSON string' },
+    { name: 'detectQueryIntent(query, autoConfig)', desc: 'Infer factoid/narrative/temporal intent' },
+    { name: 'metadataCoverage(chunks)', desc: 'Measure timestamp/source/section coverage' },
+    { name: 'resolveAutoStrategy(chunks, query, autoConfig)', desc: 'Pick strategy based on intent + metadata' },
+    { name: 'rerankWithDiversity(chunks, config)', desc: 'MMR-style diversity rerank' },
     { name: 'keyPointRecall(kp, texts, opts?)', desc: 'Fraction of key points found in texts' },
     { name: 'keyPointPrecision(kp, texts, opts?)', desc: 'Fraction of texts containing a key point' },
     { name: 'positionEffectiveness(chunks)', desc: 'U-shaped position weighting score' },
@@ -94,7 +98,7 @@ interface ChunkMetadata {
   timestamp?: number;
   page?: number;
   sectionIndex?: number;
-  sourceId?: string;
+  sourceId?: string | number | boolean;
   [key: string]: unknown;
 }
 
@@ -103,7 +107,7 @@ interface Reranker {
 }
 
 type Strategy = 'scoreSpread' | 'preserveOrder'
-  | 'chronological' | 'custom';`}</pre>
+  | 'chronological' | 'custom' | 'auto';`}</pre>
       </div>
     </section>
   );

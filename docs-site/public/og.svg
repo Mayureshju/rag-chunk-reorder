@@ -1,0 +1,22 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0a0a0f"/>
+      <stop offset="100%" stop-color="#12121a"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect x="80" y="90" width="1040" height="450" rx="24" fill="#12121a" stroke="#2a2a3e"/>
+  <text x="140" y="210" font-family="Inter, Segoe UI, sans-serif" font-size="54" fill="#e4e4ef" font-weight="700">
+    rag-chunk-reorder
+  </text>
+  <text x="140" y="280" font-family="Inter, Segoe UI, sans-serif" font-size="28" fill="#8b83ff">
+    Context Reordering for RAG Pipelines
+  </text>
+  <text x="140" y="350" font-family="Inter, Segoe UI, sans-serif" font-size="22" fill="#8888a0">
+    Retrieval reranking · Context packing · Lost-in-the-middle mitigation
+  </text>
+  <rect x="140" y="390" width="220" height="10" rx="5" fill="#6c63ff"/>
+  <rect x="370" y="390" width="340" height="10" rx="5" fill="#4ade80"/>
+  <rect x="720" y="390" width="260" height="10" rx="5" fill="#facc15"/>
+</svg>

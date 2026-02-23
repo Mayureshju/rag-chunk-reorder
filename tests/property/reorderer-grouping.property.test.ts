@@ -38,7 +38,7 @@ describe('Property 11: Within-group strategy application', () => {
         // Reorder each group in isolation
         const groups = new Map<string, Chunk[]>();
         for (const chunk of chunks) {
-          const key = chunk.metadata?.sourceId ?? '__default__';
+          const key = String(chunk.metadata?.sourceId ?? '__default__');
           if (!groups.has(key)) groups.set(key, []);
           groups.get(key)!.push(chunk);
         }
@@ -52,7 +52,7 @@ describe('Property 11: Within-group strategy application', () => {
         // Extract groups from the grouped result
         const resultGroups = new Map<string, Chunk[]>();
         for (const chunk of groupedResult) {
-          const key = chunk.metadata?.sourceId ?? '__default__';
+          const key = String(chunk.metadata?.sourceId ?? '__default__');
           if (!resultGroups.has(key)) resultGroups.set(key, []);
           resultGroups.get(key)!.push(chunk);
         }

@@ -40,6 +40,23 @@ export function Hero() {
           }}>{tag}</span>
         ))}
       </div>
+      <div style={{ marginTop: 24, display: 'flex', justifyContent: 'center', gap: 12, flexWrap: 'wrap' }}>
+        <img
+          src="https://img.shields.io/npm/v/rag-chunk-reorder.svg"
+          alt="npm version"
+          style={{ height: 20 }}
+        />
+        <img
+          src="https://img.shields.io/npm/dm/rag-chunk-reorder.svg"
+          alt="npm downloads"
+          style={{ height: 20 }}
+        />
+        <img
+          src="https://github.com/Mayureshju/rag-chunk-reorder/actions/workflows/test.yml/badge.svg"
+          alt="CI status"
+          style={{ height: 20 }}
+        />
+      </div>
     </section>
   );
 }

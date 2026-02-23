@@ -5,9 +5,13 @@ import { Hero } from './components/Hero';
 import { Problem } from './components/Problem';
 import { Solution } from './components/Solution';
 import { InteractiveDemo } from './components/InteractiveDemo';
+import { DemoClip } from './components/DemoClip';
 import { Strategies } from './components/Strategies';
+import { Recipes } from './components/Recipes';
 import { Features } from './components/Features';
 import { Pipeline } from './components/Pipeline';
+import { Benchmarks } from './components/Benchmarks';
+import { SocialProof } from './components/SocialProof';
 import { ApiReference } from './components/ApiReference';
 import { Installation } from './components/Installation';
 import { Footer } from './components/Footer';
@@ -24,9 +28,13 @@ export default function App() {
         <Problem />
         <Solution />
         <InteractiveDemo />
+        <DemoClip />
         <Strategies />
+        <Recipes />
         <Pipeline />
         <Features />
+        <Benchmarks />
+        <SocialProof />
         <Installation />
         <ApiReference />
         <Footer />

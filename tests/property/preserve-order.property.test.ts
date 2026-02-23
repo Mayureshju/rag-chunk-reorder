@@ -33,7 +33,7 @@ describe('Property 6: PreserveOrder maintains sectionIndex order within source g
         // Group result by sourceId
         const groups = new Map<string, ScoredChunk[]>();
         for (const chunk of result) {
-          const sourceId = chunk.metadata?.sourceId ?? '';
+          const sourceId = String(chunk.metadata?.sourceId ?? '');
           if (!groups.has(sourceId)) groups.set(sourceId, []);
           groups.get(sourceId)!.push(chunk);
         }
@@ -49,5 +49,74 @@ describe('Property 6: PreserveOrder maintains sectionIndex order within source g
       }),
       { numRuns: 100 },
     );
+  });
+});
+
+describe('PreserveOrder robustness with malformed sectionIndex values', () => {
+  it('should fall back to originalIndex for non-finite sectionIndex values', () => {
+    const chunks: ScoredChunk[] = [
+      {
+        id: 'bad',
+        text: 'bad',
+        score: 0.9,
+        priorityScore: 0.9,
+        originalIndex: 0,
+        metadata: { sourceId: 'doc-a', sectionIndex: 'bad' as unknown as number },
+      },
+      {
+        id: 'a',
+        text: 'a',
+        score: 0.8,
+        priorityScore: 0.8,
+        originalIndex: 1,
+        metadata: { sourceId: 'doc-a', sectionIndex: 2 },
+      },
+      {
+        id: 'b',
+        text: 'b',
+        score: 0.7,
+        priorityScore: 0.7,
+        originalIndex: 2,
+        metadata: { sourceId: 'doc-a', sectionIndex: 1 },
+      },
+    ];
+
+    const result = preserveOrder(chunks);
+    expect(result.map((c) => c.id)).toEqual(['bad', 'b', 'a']);
+  });
+});
+
+describe('PreserveOrder sourceId normalization', () => {
+  it('should group chunks by primitive sourceId values after string coercion', () => {
+    const chunks: ScoredChunk[] = [
+      {
+        id: 'a',
+        text: 'a',
+        score: 0.9,
+        priorityScore: 0.9,
+        originalIndex: 0,
+        metadata: { sourceId: 42 as unknown as string, sectionIndex: 1 },
+      },
+      {
+        id: 'b',
+        text: 'b',
+        score: 0.8,
+        priorityScore: 0.8,
+        originalIndex: 1,
+        metadata: { sourceId: 42 as unknown as string, sectionIndex: 0 },
+      },
+      {
+        id: 'c',
+        text: 'c',
+        score: 0.7,
+        priorityScore: 0.7,
+        originalIndex: 2,
+        metadata: { sourceId: 'doc-x', sectionIndex: 0 },
+      },
+    ];
+
+    const result = preserveOrder(chunks);
+    // Within sourceId=42 group, section order should be preserved after coercion.
+    expect(result.map((c) => c.id)).toEqual(['b', 'a', 'c']);
   });
 });

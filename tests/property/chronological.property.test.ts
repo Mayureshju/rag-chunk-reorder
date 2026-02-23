@@ -42,10 +42,10 @@ describe('Property 7: Chronological ascending order', () => {
   });
 });
 
-// Feature: chunk-reordering-library, Property 8: Chronological tie-breaking by score
+// Feature: chunk-reordering-library, Property 8: Chronological tie-breaking by priority
 // Validates: Requirements 5.2
-describe('Property 8: Chronological tie-breaking by score', () => {
-  it('should order chunks with same timestamp by score descending', () => {
+describe('Property 8: Chronological tie-breaking by priority', () => {
+  it('should order chunks with same timestamp by priorityScore descending', () => {
     fc.assert(
       fc.property(
         fc.double({ min: 0, max: 1e9, noNaN: true }),
@@ -63,11 +63,45 @@ describe('Property 8: Chronological tie-breaking by score', () => {
           const result = chronological(chunks);
 
           for (let i = 1; i < result.length; i++) {
-            expect(result[i - 1].score).toBeGreaterThanOrEqual(result[i].score);
+            expect(result[i - 1].priorityScore).toBeGreaterThanOrEqual(result[i].priorityScore);
           }
         },
       ),
       { numRuns: 100 },
     );
+  });
+});
+
+describe('Chronological robustness with malformed timestamps', () => {
+  it('should treat non-finite timestamps as missing and place those chunks at the end', () => {
+    const chunks: ScoredChunk[] = [
+      {
+        id: 'bad',
+        text: 'bad',
+        score: 0.9,
+        priorityScore: 0.9,
+        originalIndex: 0,
+        metadata: { timestamp: 'bad' as unknown as number },
+      },
+      {
+        id: 'a',
+        text: 'a',
+        score: 0.8,
+        priorityScore: 0.8,
+        originalIndex: 1,
+        metadata: { timestamp: 100 },
+      },
+      {
+        id: 'b',
+        text: 'b',
+        score: 0.7,
+        priorityScore: 0.7,
+        originalIndex: 2,
+        metadata: { timestamp: 200 },
+      },
+    ];
+
+    const result = chronological(chunks);
+    expect(result.map((c) => c.id)).toEqual(['a', 'b', 'bad']);
   });
 });

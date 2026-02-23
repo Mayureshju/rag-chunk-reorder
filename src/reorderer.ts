@@ -9,6 +9,8 @@ import { chronological } from './strategies/chronological';
 import { customSort } from './strategies/custom';
 import { groupChunks, orderGroups } from './grouper';
 import { deduplicateChunks } from './deduplicator';
+import { resolveAutoStrategy } from './selector';
+import { rerankWithDiversity } from './diversity';
 
 function stripInternalFields(chunk: ScoredChunk, includePriorityScore?: boolean): Chunk {
   const { priorityScore, originalIndex: _, ...rest } = chunk;
@@ -18,8 +20,12 @@ function stripInternalFields(chunk: ScoredChunk, includePriorityScore?: boolean)
   return rest;
 }
 
-function applyStrategy(chunks: ScoredChunk[], config: ReorderConfig): ScoredChunk[] {
-  switch (config.strategy) {
+function applyStrategy(
+  chunks: ScoredChunk[],
+  strategy: Exclude<ReorderConfig['strategy'], 'auto' | undefined>,
+  config: ReorderConfig,
+): ScoredChunk[] {
+  switch (strategy) {
     case 'scoreSpread':
       return scoreSpread(chunks, config.startCount, config.endCount);
     case 'preserveOrder':
@@ -37,7 +43,34 @@ function filterByMinScore(chunks: Chunk[], minScore: number): Chunk[] {
   return chunks.filter((c) => c.score >= minScore);
 }
 
-function applyTokenBudget(
+function buildEdgePriorityOrder(length: number): number[] {
+  const order: number[] = [];
+  let front = 0;
+  let back = length - 1;
+
+  while (front <= back) {
+    order.push(front);
+    if (front !== back) {
+      order.push(back);
+    }
+    front++;
+    back--;
+  }
+
+  return order;
+}
+
+function takeFromEdges<T>(items: T[], count: number): T[] {
+  if (count >= items.length) return [...items];
+  if (count <= 0) return [];
+
+  const frontCount = Math.ceil(count / 2);
+  const backCount = Math.floor(count / 2);
+
+  return [...items.slice(0, frontCount), ...items.slice(items.length - backCount)];
+}
+
+function applyTokenBudgetPrefix(
   chunks: Chunk[],
   maxTokens: number,
   tokenCounter: (text: string) => number,
@@ -45,12 +78,52 @@ function applyTokenBudget(
   const result: Chunk[] = [];
   let totalTokens = 0;
   for (const chunk of chunks) {
-    const tokens = tokenCounter(chunk.text);
+    const tokens = getTokenCount(chunk.text, tokenCounter);
     if (totalTokens + tokens > maxTokens) break;
     totalTokens += tokens;
     result.push(chunk);
   }
   return result;
+}
+
+/**
+ * Token-budget trimming for scoreSpread output.
+ * Prefers chunks near both edges (high-attention zones) instead of prefix-only truncation.
+ */
+function applyTokenBudgetEdgeAware(
+  chunks: Chunk[],
+  maxTokens: number,
+  tokenCounter: (text: string) => number,
+): Chunk[] {
+  const selectedIndices = new Set<number>();
+  let totalTokens = 0;
+
+  for (const idx of buildEdgePriorityOrder(chunks.length)) {
+    const tokens = getTokenCount(chunks[idx].text, tokenCounter);
+    if (tokens > maxTokens) continue;
+    if (totalTokens + tokens > maxTokens) continue;
+
+    totalTokens += tokens;
+    selectedIndices.add(idx);
+  }
+
+  return chunks.filter((_, idx) => selectedIndices.has(idx));
+}
+
+function getTokenCount(text: string, tokenCounter: (text: string) => number): number {
+  const tokens = tokenCounter(text);
+  if (typeof tokens !== 'number' || !Number.isFinite(tokens) || tokens < 0) {
+    throw new ValidationError('tokenCounter must return a non-negative finite number');
+  }
+  return tokens;
+}
+
+function resolvePacking(
+  packing: ReorderConfig['packing'],
+  strategy: Exclude<ReorderConfig['strategy'], 'auto' | undefined>,
+): 'prefix' | 'edgeAware' {
+  if (packing === 'prefix' || packing === 'edgeAware') return packing;
+  return strategy === 'scoreSpread' ? 'edgeAware' : 'prefix';
 }
 
 /**
@@ -64,12 +137,29 @@ export class Reorderer {
     const merged = mergeConfig(config);
     validateConfig(merged);
     if (merged.weights) Object.freeze(merged.weights);
+    if (merged.autoStrategy?.temporalQueryTerms) {
+      Object.freeze(merged.autoStrategy.temporalQueryTerms);
+    }
+    if (merged.autoStrategy?.narrativeQueryTerms) {
+      Object.freeze(merged.autoStrategy.narrativeQueryTerms);
+    }
+    if (merged.autoStrategy) Object.freeze(merged.autoStrategy);
+    if (merged.diversity) Object.freeze(merged.diversity);
     this.config = Object.freeze(merged);
   }
 
   /** Returns a deep copy of the current configuration. */
   getConfig(): ReorderConfig {
-    return { ...this.config, weights: { ...this.config.weights } };
+    return {
+      ...this.config,
+      weights: { ...this.config.weights },
+      autoStrategy: {
+        ...this.config.autoStrategy,
+        temporalQueryTerms: [...(this.config.autoStrategy.temporalQueryTerms ?? [])],
+        narrativeQueryTerms: [...(this.config.autoStrategy.narrativeQueryTerms ?? [])],
+      },
+      diversity: { ...this.config.diversity },
+    };
   }
 
   private mergeOverrides(overrides?: Partial<ReorderConfig>): MergedReorderConfig {
@@ -78,12 +168,39 @@ export class Reorderer {
       ...this.config,
       ...overrides,
       weights: { ...this.config.weights, ...overrides.weights },
+      autoStrategy: { ...this.config.autoStrategy, ...overrides.autoStrategy },
+      diversity: { ...this.config.diversity, ...overrides.diversity },
     };
+    merged.autoStrategy.temporalQueryTerms = [
+      ...(overrides?.autoStrategy?.temporalQueryTerms ??
+        this.config.autoStrategy.temporalQueryTerms ??
+        []),
+    ];
+    merged.autoStrategy.narrativeQueryTerms = [
+      ...(overrides?.autoStrategy?.narrativeQueryTerms ??
+        this.config.autoStrategy.narrativeQueryTerms ??
+        []),
+    ];
+
+    // Prevent stale comparators from previous custom configs from leaking into
+    // non-custom override calls (for example custom -> auto).
+    if (merged.strategy !== 'custom') {
+      merged.customComparator = undefined;
+    }
+
     validateConfig(merged);
     return merged;
   }
 
-  private executePipelineWithConfig(chunks: Chunk[], config: MergedReorderConfig): Chunk[] {
+  private executePipelineWithConfig(
+    chunks: Chunk[],
+    config: MergedReorderConfig,
+    query?: string,
+  ): Chunk[] {
+    if (chunks.length === 0) return [];
+    // Validate input before any filtering/transforms so malformed chunks never
+    // bypass validation (for example via minScore) or trigger raw runtime errors.
+    validateChunks(chunks);
 
     let working = chunks;
 
@@ -102,46 +219,77 @@ export class Reorderer {
 
     if (working.length === 0) return [];
 
-    validateChunks(working);
+    const resolvedStrategy: Exclude<ReorderConfig['strategy'], 'auto' | undefined> =
+      config.strategy === 'auto'
+        ? resolveAutoStrategy(working, query, config.autoStrategy)
+        : config.strategy;
 
-    const scored = scoreChunks(working, config.weights);
+    let scored = scoreChunks(working, config.weights);
+
+    if (config.diversity.enabled) {
+      scored = rerankWithDiversity(scored, config.diversity);
+    }
 
     let result: ScoredChunk[];
 
-    if (config.groupBy) {
-      const groups = groupChunks(scored, config.groupBy);
+    const groupField = config.groupBy;
+    const shouldGroup =
+      groupField !== undefined &&
+      !(resolvedStrategy === 'preserveOrder' && groupField === 'sourceId');
+
+    if (shouldGroup && groupField !== undefined) {
+      const groups = groupChunks(scored, groupField);
       const ordered = orderGroups(groups);
       const reorderedGroups = ordered.map(
-        ([key, group]) => [key, applyStrategy(group, config)] as [string, ScoredChunk[]],
+        ([key, group]) =>
+          [key, applyStrategy(group, resolvedStrategy, config)] as [string, ScoredChunk[]],
       );
       result = reorderedGroups.flatMap(([, group]) => group);
     } else {
-      result = applyStrategy(scored, config);
+      result = applyStrategy(scored, resolvedStrategy, config);
     }
 
     let output = result.map((c) => stripInternalFields(c, config.includePriorityScore));
+    const packing = resolvePacking(config.packing, resolvedStrategy);
 
-    // Apply token budget after reordering (drop lowest-priority tail chunks)
+    // Apply token budget after reordering.
+    // scoreSpread keeps chunks from both edges to preserve primacy/recency placements.
     if (config.maxTokens !== undefined && config.tokenCounter) {
-      output = applyTokenBudget(output, config.maxTokens, config.tokenCounter);
+      output =
+        packing === 'edgeAware'
+          ? applyTokenBudgetEdgeAware(output, config.maxTokens, config.tokenCounter)
+          : applyTokenBudgetPrefix(output, config.maxTokens, config.tokenCounter);
     }
 
-    // Apply topK limit
+    // Apply topK limit.
+    // scoreSpread keeps chunks from both edges to preserve primacy/recency placements.
     if (config.topK !== undefined && output.length > config.topK) {
-      output = output.slice(0, config.topK);
+      output =
+        packing === 'edgeAware'
+          ? takeFromEdges(output, config.topK)
+          : output.slice(0, config.topK);
     }
 
     return output;
   }
 
   /** Synchronous reorder. Does not support reranker (use `reorder` for that). Throws if reranker is passed via overrides. */
-  reorderSync(chunks: Chunk[], overrides?: Partial<ReorderConfig>): Chunk[] {
+  reorderSync(chunks: Chunk[], overrides?: Partial<ReorderConfig>): Chunk[];
+  reorderSync(chunks: Chunk[], query: string, overrides?: Partial<ReorderConfig>): Chunk[];
+  reorderSync(
+    chunks: Chunk[],
+    queryOrOverrides?: string | Partial<ReorderConfig>,
+    maybeOverrides?: Partial<ReorderConfig>,
+  ): Chunk[] {
+    const query = typeof queryOrOverrides === 'string' ? queryOrOverrides : undefined;
+    const overrides = typeof queryOrOverrides === 'string' ? maybeOverrides : queryOrOverrides;
+
     if (overrides?.reranker) {
       throw new ValidationError(
         'reranker cannot be used with reorderSync(). Use the async reorder() method instead.',
       );
     }
-    return this.executePipelineWithConfig(chunks, this.mergeOverrides(overrides));
+    return this.executePipelineWithConfig(chunks, this.mergeOverrides(overrides), query);
   }
 
   /** Async reorder with optional reranker integration. */
@@ -158,7 +306,10 @@ export class Reorderer {
 
     if (config.reranker && query) {
       try {
-        workingChunks = await config.reranker.rerank(chunks, query);
+        const reranked = await config.reranker.rerank(chunks, query);
+        // Validate reranker output early so we can fall back gracefully.
+        validateChunks(reranked);
+        workingChunks = reranked;
       } catch (error) {
         if (config.onRerankerError) {
           config.onRerankerError(error);
@@ -167,7 +318,7 @@ export class Reorderer {
       }
     }
 
-    return this.executePipelineWithConfig(workingChunks, config);
+    return this.executePipelineWithConfig(workingChunks, config, query);
   }
 
   /**

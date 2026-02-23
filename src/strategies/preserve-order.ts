@@ -1,5 +1,18 @@
 import { ScoredChunk } from '../types';
 
+function finiteSectionIndex(value: unknown): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
+  return value;
+}
+
+function normalizeSourceId(value: unknown): string {
+  if (value === undefined || value === null) return '';
+  if (typeof value === 'object' || typeof value === 'function' || typeof value === 'symbol') {
+    return '';
+  }
+  return String(value);
+}
+
 /**
  * PreserveOrder reordering strategy (OP-RAG).
  * Groups chunks by sourceId and sorts within each group by sectionIndex ascending.
@@ -12,7 +25,7 @@ export function preserveOrder(chunks: ScoredChunk[]): ScoredChunk[] {
   // Group by sourceId
   const groups = new Map<string, ScoredChunk[]>();
   for (const chunk of chunks) {
-    const sourceId = chunk.metadata?.sourceId ?? '';
+    const sourceId = normalizeSourceId(chunk.metadata?.sourceId);
     if (!groups.has(sourceId)) groups.set(sourceId, []);
     groups.get(sourceId)!.push(chunk);
   }
@@ -20,8 +33,8 @@ export function preserveOrder(chunks: ScoredChunk[]): ScoredChunk[] {
   // Sort within each group by sectionIndex (fallback to originalIndex)
   for (const [, group] of groups) {
     group.sort((a, b) => {
-      const secA = a.metadata?.sectionIndex ?? a.originalIndex;
-      const secB = b.metadata?.sectionIndex ?? b.originalIndex;
+      const secA = finiteSectionIndex(a.metadata?.sectionIndex) ?? a.originalIndex;
+      const secB = finiteSectionIndex(b.metadata?.sectionIndex) ?? b.originalIndex;
       if (secA !== secB) return secA - secB;
       return a.originalIndex - b.originalIndex;
     });

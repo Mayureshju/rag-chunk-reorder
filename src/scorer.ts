@@ -6,6 +6,11 @@ function normalize(value: number | undefined, min: number, max: number): number 
   return (value - min) / (max - min);
 }
 
+function finiteOrUndefined(value: unknown): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
+  return value;
+}
+
 function minMax(values: number[]): [number, number] {
   if (values.length === 0) return [0, 0];
   let min = values[0];
@@ -26,16 +31,22 @@ export function scoreChunks(chunks: Chunk[], weights: ScoringWeights): ScoredChu
   const definedSections: number[] = [];
 
   for (const c of chunks) {
-    if (c.metadata?.timestamp !== undefined) definedTimestamps.push(c.metadata.timestamp);
-    if (c.metadata?.sectionIndex !== undefined) definedSections.push(c.metadata.sectionIndex);
+    const timestamp = finiteOrUndefined(c.metadata?.timestamp);
+    const sectionIndex = finiteOrUndefined(c.metadata?.sectionIndex);
+    if (timestamp !== undefined) definedTimestamps.push(timestamp);
+    if (sectionIndex !== undefined) definedSections.push(sectionIndex);
   }
 
   const [minTs, maxTs] = minMax(definedTimestamps);
   const [minSec, maxSec] = minMax(definedSections);
 
   return chunks.map((chunk, index) => {
-    const normalizedTime = normalize(chunk.metadata?.timestamp, minTs, maxTs);
-    const normalizedSection = normalize(chunk.metadata?.sectionIndex, minSec, maxSec);
+    const normalizedTime = normalize(finiteOrUndefined(chunk.metadata?.timestamp), minTs, maxTs);
+    const normalizedSection = normalize(
+      finiteOrUndefined(chunk.metadata?.sectionIndex),
+      minSec,
+      maxSec,
+    );
 
     const priorityScore =
       chunk.score * weights.similarity +

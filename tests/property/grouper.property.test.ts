@@ -56,6 +56,41 @@ describe('Property 10: Grouper partitioning correctness', () => {
   });
 });
 
+describe('Grouper default group key collisions', () => {
+  it('should keep missing-field chunks separate from literal "__default__" values', () => {
+    const chunks: ScoredChunk[] = [
+      {
+        id: 'missing',
+        text: 'missing',
+        score: 0.8,
+        priorityScore: 0.8,
+        originalIndex: 0,
+        metadata: {},
+      },
+      {
+        id: 'literal',
+        text: 'literal',
+        score: 0.7,
+        priorityScore: 0.7,
+        originalIndex: 1,
+        metadata: { customGroup: '__default__' },
+      },
+    ];
+
+    const groups = groupChunks(chunks, 'customGroup');
+    expect(groups.size).toBe(2);
+
+    const entries = Array.from(groups.entries());
+    const missingEntry = entries.find(([, group]) => group.some((chunk) => chunk.id === 'missing'));
+    const literalEntry = entries.find(([, group]) => group.some((chunk) => chunk.id === 'literal'));
+
+    expect(missingEntry).toBeDefined();
+    expect(literalEntry).toBeDefined();
+    expect(missingEntry![0]).not.toBe('__default__');
+    expect(literalEntry![0]).toBe('__default__');
+  });
+});
+
 // Feature: chunk-reordering-library, Property 12: Cross-group ordering by max score
 // Validates: Requirements 7.3
 describe('Property 12: Cross-group ordering by max score', () => {
