@@ -1,5 +1,6 @@
-import { Chunk } from './types';
+import { Chunk, ValidationMode } from './types';
 import { ValidationError } from './errors';
+import { prepareChunks } from './validator';
 
 /** Options for chunk deduplication. */
 export interface DeduplicateOptions {
@@ -7,6 +8,8 @@ export interface DeduplicateOptions {
   threshold?: number;
   /** Strategy for picking the survivor when duplicates are found. Default: 'highestScore'. */
   keep?: 'highestScore' | 'first' | 'last';
+  /** Validation behavior when used as a direct API. Default: 'strict'. */
+  validationMode?: ValidationMode;
 }
 
 /**
@@ -77,14 +80,23 @@ export function deduplicateChunks(chunks: Chunk[], options?: DeduplicateOptions)
     );
   }
 
-  if (chunks.length <= 1) return [...chunks];
+  let working: Chunk[];
+  try {
+    working = prepareChunks(chunks, options?.validationMode ?? 'strict');
+  } catch (error) {
+    throw new ValidationError(
+      `Invalid chunks supplied to deduplicateChunks: ${(error as Error).message}`,
+    );
+  }
+
+  if (working.length <= 1) return [...working];
 
   // Fast path: exact dedup only
   if (threshold >= 1.0) {
-    return deduplicateExact(chunks, keep);
+    return deduplicateExact(working, keep);
   }
 
-  return deduplicateFuzzy(chunks, threshold, keep);
+  return deduplicateFuzzy(working, threshold, keep);
 }
 
 function deduplicateExact(chunks: Chunk[], keep: 'highestScore' | 'first' | 'last'): Chunk[] {

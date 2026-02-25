@@ -142,6 +142,14 @@ describe('weights NaN/Infinity rejection', () => {
   it('should reject -Infinity section weight', () => {
     expect(() => validateConfig({ weights: { section: -Infinity } })).toThrow(ValidationError);
   });
+
+  it('should reject NaN sourceReliability weight', () => {
+    expect(() => validateConfig({ weights: { sourceReliability: NaN } })).toThrow(ValidationError);
+  });
+
+  it('should reject negative sourceReliability weight', () => {
+    expect(() => validateConfig({ weights: { sourceReliability: -0.1 } })).toThrow(ValidationError);
+  });
 });
 
 describe('deduplicateThreshold finite validation', () => {
@@ -284,6 +292,16 @@ describe('packing strategy validation', () => {
 
   it('should reject invalid packing values', () => {
     expect(() => validateConfig({ packing: 'invalid' as any })).toThrow(ValidationError);
+  });
+});
+
+describe('reranker timeout validation', () => {
+  it('should reject negative rerankerTimeoutMs', () => {
+    expect(() => validateConfig({ rerankerTimeoutMs: -1 })).toThrow(ValidationError);
+  });
+
+  it('should reject NaN rerankerTimeoutMs', () => {
+    expect(() => validateConfig({ rerankerTimeoutMs: NaN })).toThrow(ValidationError);
   });
 });
 

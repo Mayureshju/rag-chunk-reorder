@@ -282,6 +282,7 @@ const reorderer = new Reorderer({
     similarity: 1.0, // weight for base relevance score
     time: 0.0, // weight for normalized timestamp
     section: 0.0, // weight for normalized sectionIndex
+    sourceReliability: 0.0, // weight for normalized source reliability
   },
 
   // ScoreSpread options (optional)
@@ -296,6 +297,7 @@ const reorderer = new Reorderer({
   // Token budget
   maxTokens: 4096, // max total tokens in output
   tokenCounter: (text) => text.split(/\s+/).length, // required when maxTokens is set
+  // If chunk.tokenCount or metadata.tokenCount is present, it is used instead of tokenCounter
 
   // Deduplication
   deduplicate: true, // remove duplicate chunks
@@ -316,9 +318,17 @@ const reorderer = new Reorderer({
   // Reranker (async only)
   reranker: myReranker, // external cross-encoder reranker
   onRerankerError: (err) => console.warn('Reranker failed:', err),
+  rerankerTimeoutMs: 2000, // optional timeout for reranker
+  rerankerAbortSignal: myAbortSignal, // optional AbortSignal
 
   // Budget packing policy for maxTokens/topK
   packing: 'auto', // 'auto' | 'prefix' | 'edgeAware'
+
+  // Validation mode
+  validationMode: 'strict', // 'strict' | 'coerce'
+
+  // Diagnostics hook
+  onDiagnostics: (stats) => console.log('reorder diagnostics', stats),
 
   // Debug
   includePriorityScore: true, // include computed priorityScore in output metadata
@@ -333,7 +343,7 @@ const reorderer = new Reorderer({
 | `startCount`           | `number`                                                                | `undefined`     | Number of top chunks to place at the beginning (scoreSpread) |
 | `endCount`             | `number`                                                                | `undefined`     | Number of next top chunks to place at the end (scoreSpread)  |
 | `minScore`             | `number`                                                                | `undefined`     | Minimum relevance score threshold                            |
-| `topK`                 | `number`                                                                | `Infinity`      | Maximum number of chunks to return                           |
+| `topK`                 | `number`                                                                | `undefined`     | Maximum number of chunks to return                           |
 | `maxTokens`            | `number`                                                                | `undefined`     | Maximum token budget for output                              |
 | `packing`              | `'auto'` \| `'prefix'` \| `'edgeAware'`                                 | `'auto'`        | How token/topK budgets are packed                            |
 | `deduplicate`          | `boolean`                                                               | `false`         | Whether to remove duplicates                                 |
@@ -345,10 +355,15 @@ const reorderer = new Reorderer({
 | `weights.similarity`   | `number`                                                                | `1.0`           | Weight for base relevance score                              |
 | `weights.time`         | `number`                                                                | `0.0`           | Weight for timestamp in priority calculation                 |
 | `weights.section`      | `number`                                                                | `0.0`           | Weight for sectionIndex in priority calculation              |
+| `weights.sourceReliability` | `number`                                                          | `0.0`           | Weight for source reliability in priority calculation        |
 | `autoStrategy.temporalTimestampCoverageThreshold` | `number` (0-1)                                        | `0.4`           | Timestamp coverage needed for temporal auto-routing          |
 | `autoStrategy.narrativeSourceCoverageThreshold`   | `number` (0-1)                                        | `0.4`           | Source coverage needed for narrative auto-routing            |
 | `autoStrategy.narrativeSectionCoverageThreshold`  | `number` (0-1)                                        | `0.3`           | Section coverage needed for narrative auto-routing           |
+| `validationMode`     | `'strict'` \| `'coerce'`                                         | `'strict'`     | Input validation behavior                                    |
+| `onDiagnostics`      | `(stats) => void`                                                 | `undefined`    | Structured pipeline stats per reorder call                   |
 | `includePriorityScore` | `boolean`                                                               | `false`         | Include computed priority in output metadata                 |
+| `rerankerTimeoutMs`    | `number`                                                                | `undefined`     | Reranker timeout in milliseconds                             |
+| `rerankerAbortSignal`  | `AbortSignal`                                                           | `undefined`     | Abort signal forwarded to reranker                           |
 
 ---
 
@@ -525,6 +540,7 @@ class Reorderer {
 | ----------------------------------------------- | ---------------------------- |
 | `scoreChunks(chunks, weights)`                  | Compute priority scores      |
 | `validateChunks(chunks)`                        | Validate chunk array         |
+| `prepareChunks(chunks, mode?)`                  | Validate or coerce chunks    |
 | `validateConfig(config)`                        | Validate configuration       |
 | `mergeConfig(config)`                           | Merge with defaults          |
 | `deduplicateChunks(chunks, options?)`           | Remove duplicates            |
@@ -537,11 +553,16 @@ class Reorderer {
 | `rerankWithDiversity(chunks, diversityConfig)`  | MMR/source diversity rerank  |
 | `keyPointRecall(keyPoints, texts, options?)`    | Key-point recall metric      |
 | `keyPointPrecision(keyPoints, texts, options?)` | Key-point precision metric   |
+| `spanRecall(spans, texts, options?)`            | Relevant span recall metric  |
 | `positionEffectiveness(chunks)`                 | Position effectiveness score |
 | `ndcg(scores)`                                  | Normalized DCG               |
 | `exactMatch(prediction, references)`            | Answer EM metric             |
+| `isAnswerable(text)`                            | Answerable/unanswerable classifier |
+| `answerabilityMatch(prediction, references)`    | Answerability match score    |
 | `tokenF1(prediction, references)`               | Answer-level token F1        |
+| `citationCoverage(prediction, contexts, options?)` | Answer token coverage in contexts |
 | `faithfulness(prediction, contexts, options?)`  | Context-support faithfulness |
+| `retrievalRecallAtK(retrieved, relevantIds, k?)` | Retrieval recall@k           |
 | `evaluateAnswerSet(cases)`                      | Aggregate answer evaluation  |
 | `reorderLangChainDocuments(docs, options?)`     | LangChain adapter            |
 | `reorderLangChainPairs(pairs, options?)`        | LangChain scored-pairs adapter |
@@ -555,6 +576,7 @@ interface Chunk {
   id: string;
   text: string;
   score: number;
+  tokenCount?: number;
   metadata?: ChunkMetadata;
 }
 
@@ -563,11 +585,13 @@ interface ChunkMetadata {
   page?: number;
   sectionIndex?: number;
   sourceId?: string | number | boolean;
+  sourceReliability?: number;
+  tokenCount?: number;
   [key: string]: unknown;
 }
 
 interface Reranker {
-  rerank(chunks: Chunk[], query: string): Promise<Chunk[]>;
+  rerank(chunks: Chunk[], query: string, options?: { signal?: AbortSignal }): Promise<Chunk[]>;
 }
 
 type Strategy = 'scoreSpread' | 'preserveOrder' | 'chronological' | 'custom' | 'auto';
@@ -582,11 +606,16 @@ type QueryIntent = 'factoid' | 'narrative' | 'temporal';
 import {
   keyPointRecall,
   keyPointPrecision,
+  spanRecall,
   positionEffectiveness,
   ndcg,
   exactMatch,
+  isAnswerable,
+  answerabilityMatch,
   tokenF1,
+  citationCoverage,
   faithfulness,
+  retrievalRecallAtK,
   evaluateAnswerSet,
 } from 'rag-chunk-reorder';
 
@@ -595,6 +624,7 @@ const texts = reordered.map((c) => c.text);
 
 // What fraction of key points appear in the chunks?
 const recall = keyPointRecall(keyPoints, texts);
+const spanRecallScore = spanRecall(['Paris is the capital'], texts);
 
 // What fraction of chunks contain at least one key point?
 const precision = keyPointPrecision(keyPoints, texts);
@@ -610,13 +640,20 @@ const rankQuality = ndcg(reordered.map((c) => c.score));
 
 // Answer-level metrics
 const em = exactMatch('Paris', ['Paris', 'City of Paris']);
+const answerable = isAnswerable('Paris');
+const answerability = answerabilityMatch('Paris', ['Paris']);
 const f1 = tokenF1('Paris is capital of France', ['The capital of France is Paris']);
 const grounded = faithfulness('Paris is capital of France', texts);
+const coverage = citationCoverage('Paris is capital of France', texts);
+const recallAtK = retrievalRecallAtK(reordered, ['doc-1', 'doc-3'], 5);
 
 const answerSummary = evaluateAnswerSet([
   { prediction: 'Paris', references: ['Paris'], contexts: texts },
 ]);
 ```
+
+For dataset-level before/after evaluations, see `examples/eval-cli.js` with a JSONL dataset
+like `examples/data/sample-eval.jsonl`.
 
 ---
 
@@ -624,9 +661,9 @@ const answerSummary = evaluateAnswerSet([
 
 The reordering pipeline processes chunks in this order:
 
-1. **minScore filter** — drop chunks below threshold
-2. **Deduplicate** — remove exact/fuzzy duplicates
-3. **Validate** — check required fields (id, text, score)
+1. **Validate/coerce** — check required fields (id, text, score), optionally clamp/clean
+2. **minScore filter** — drop chunks below threshold
+3. **Deduplicate** — remove exact/fuzzy duplicates
 4. **Score** — compute priorityScore from weights + metadata
 5. **Diversity rerank** (optional) — apply MMR/source diversity
 6. **Auto strategy resolve** (optional) — pick strategy from query + metadata coverage
@@ -672,7 +709,7 @@ The reordering pipeline processes chunks in this order:
 
 4. **Enable diversity when topK is small**: `diversity.enabled: true` helps avoid near-duplicate context waste
 
-5. **Monitor answer-level metrics**: Track `exactMatch`, `tokenF1`, and `faithfulness` in addition to ranking metrics
+5. **Monitor answer-level metrics**: Track `exactMatch`, `tokenF1`, `answerability`, `citationCoverage`, and `faithfulness` in addition to ranking metrics
 
 6. **Set minScore**: Filter low-quality chunks early to reduce processing overhead
 
@@ -694,6 +731,7 @@ See runnable integration examples:
 - `examples/llamaindex.ts`
 - `examples/haystack.ts`
 - `examples/evaluation.ts`
+- `examples/eval-cli.js`
 - `examples/langchain-pinecone.ts`
 - `examples/llamaindex-qdrant.ts`
 - `examples/openai-responses.ts`

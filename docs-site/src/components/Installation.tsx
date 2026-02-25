@@ -23,6 +23,40 @@ export function Installation() {
           ))}
         </div>
         <pre style={{ margin: 0 }}><code style={{ color: 'var(--green)', border: 'none', background: 'none' }}>$ {cmds[tab]}</code></pre>
+        <div style={{ display: 'flex', gap: 12, marginTop: 16, flexWrap: 'wrap' }}>
+          <a
+            href="https://www.npmjs.com/package/rag-chunk-reorder"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              border: '1px solid var(--border)',
+              borderRadius: 999,
+              padding: '6px 14px',
+              fontSize: '0.8rem',
+              fontWeight: 600,
+              color: 'var(--green)',
+              textDecoration: 'none',
+            }}
+          >
+            View on npm
+          </a>
+          <a
+            href="https://github.com/Mayureshju/rag-chunk-reorder"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              border: '1px solid var(--border)',
+              borderRadius: 999,
+              padding: '6px 14px',
+              fontSize: '0.8rem',
+              fontWeight: 600,
+              color: 'var(--accent-light)',
+              textDecoration: 'none',
+            }}
+          >
+            View on GitHub
+          </a>
+        </div>
       </div>
 
       <div className="card">

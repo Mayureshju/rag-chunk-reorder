@@ -10,7 +10,11 @@ export type {
   AutoStrategyConfig,
   DiversityConfig,
   PackingStrategy,
+  ValidationMode,
   ReorderConfig,
+  ReorderDiagnostics,
+  CoercionStats,
+  AbortSignalLike,
   Reranker,
 } from './types';
 
@@ -19,7 +23,7 @@ export { Reorderer } from './reorderer';
 export { scoreChunks } from './scorer';
 export { validateConfig, mergeConfig } from './config';
 export type { MergedReorderConfig } from './config';
-export { validateChunks } from './validator';
+export { validateChunks, prepareChunks } from './validator';
 
 // Deduplication
 export { deduplicateChunks, trigramSimilarity } from './deduplicator';
@@ -32,11 +36,16 @@ export { serializeChunks, deserializeChunks } from './serializer';
 export {
   keyPointRecall,
   keyPointPrecision,
+  spanRecall,
   positionEffectiveness,
   ndcg,
   exactMatch,
+  isAnswerable,
+  answerabilityMatch,
   tokenF1,
+  citationCoverage,
   faithfulness,
+  retrievalRecallAtK,
   evaluateAnswerSet,
 } from './evaluator';
 export type {
@@ -44,6 +53,7 @@ export type {
   AnswerEvalCase,
   AnswerEvalSummary,
   FaithfulnessOptions,
+  CitationCoverageOptions,
 } from './evaluator';
 
 // Auto strategy

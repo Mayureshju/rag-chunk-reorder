@@ -14,6 +14,15 @@ export interface FaithfulnessOptions {
   minTokenLength?: number;
 }
 
+export interface CitationCoverageOptions {
+  /** Use case-insensitive matching for token support checks. Defaults to true. */
+  caseInsensitive?: boolean;
+  /** Filter common stop words from answer tokens. Defaults to false. */
+  ignoreStopWords?: boolean;
+  /** Minimum token length to include in coverage scoring. Defaults to 1. */
+  minTokenLength?: number;
+}
+
 export interface AnswerEvalCase {
   prediction: string;
   references: string[] | string;
@@ -24,8 +33,16 @@ export interface AnswerEvalSummary {
   count: number;
   exactMatch: number;
   f1: number;
+  answerability?: number;
   faithfulness?: number;
-  perExample: Array<{ exactMatch: number; f1: number; faithfulness?: number }>;
+  citationCoverage?: number;
+  perExample: Array<{
+    exactMatch: number;
+    f1: number;
+    faithfulness?: number;
+    citationCoverage?: number;
+    answerability?: number;
+  }>;
 }
 
 const DEFAULT_STOP_WORDS = new Set([
@@ -116,6 +133,20 @@ function tokenizeForFaithfulness(text: string, options?: FaithfulnessOptions): s
   });
 }
 
+function tokenizeForCoverage(text: string, options?: CitationCoverageOptions): string[] {
+  const caseInsensitive = options?.caseInsensitive ?? true;
+  const ignoreStopWords = options?.ignoreStopWords ?? false;
+  const minTokenLength = options?.minTokenLength ?? 1;
+
+  const normalized = caseInsensitive ? text.toLowerCase() : text;
+  const tokens = normalized.normalize('NFKC').match(/[\p{L}\p{N}]+/gu) ?? [];
+  return tokens.filter((t) => {
+    if (t.length < minTokenLength) return false;
+    if (ignoreStopWords && DEFAULT_STOP_WORDS.has(t.toLowerCase())) return false;
+    return true;
+  });
+}
+
 function containsKeyPoint(text: string, keyPoint: string, caseInsensitive: boolean): boolean {
   if (caseInsensitive) {
     return text.toLowerCase().includes(keyPoint.toLowerCase());
@@ -155,6 +186,18 @@ export function keyPointPrecision(
     keyPoints.some((kp) => containsKeyPoint(text, kp, ci)),
   );
   return matching.length / chunkTexts.length;
+}
+
+/**
+ * Span recall: fraction of relevant spans found as substrings in any chunk text.
+ * Alias of keyPointRecall for evaluation harnesses that use span labels.
+ */
+export function spanRecall(
+  spans: string[],
+  chunkTexts: string[],
+  options?: EvalOptions,
+): number {
+  return keyPointRecall(spans, chunkTexts, options);
 }
 
 /**
@@ -237,6 +280,24 @@ export function exactMatch(prediction: string, references: string[] | string): n
 }
 
 /**
+ * Answerability classification based on normalized text.
+ */
+export function isAnswerable(text: string): boolean {
+  return normalizeAnswer(text).length > 0;
+}
+
+/**
+ * Answerability match between prediction and references (SQuAD-style).
+ * Returns 1 when both are answerable or both are unanswerable.
+ */
+export function answerabilityMatch(prediction: string, references: string[] | string): number {
+  const refs = toReferences(references);
+  const referenceAnswerable = refs.some((r) => isAnswerable(r));
+  const predictionAnswerable = isAnswerable(prediction);
+  return predictionAnswerable === referenceAnswerable ? 1 : 0;
+}
+
+/**
  * Token-level F1 between prediction and references (best-of over references).
  */
 export function tokenF1(prediction: string, references: string[] | string): number {
@@ -247,6 +308,52 @@ export function tokenF1(prediction: string, references: string[] | string): numb
     if (f1 > best) best = f1;
   }
   return best;
+}
+
+/**
+ * Citation coverage: fraction of answer tokens supported by provided contexts.
+ * Uses a lighter tokenizer than faithfulness and defaults to keep stop words.
+ */
+export function citationCoverage(
+  prediction: string,
+  contexts: string[],
+  options?: CitationCoverageOptions,
+): number {
+  if (contexts.length === 0) return 0;
+  const answerTokens = new Set(tokenizeForCoverage(prediction, options));
+  if (answerTokens.size === 0) return 0;
+
+  const contextTokens = new Set(tokenizeForCoverage(contexts.join(' '), options));
+  if (contextTokens.size === 0) return 0;
+
+  let supported = 0;
+  for (const token of answerTokens) {
+    if (contextTokens.has(token)) supported++;
+  }
+
+  return supported / answerTokens.size;
+}
+
+/**
+ * Retrieval recall@k based on labeled relevant IDs.
+ */
+export function retrievalRecallAtK(
+  retrieved: Array<{ id: string } | string>,
+  relevantIds: string[],
+  k?: number,
+): number {
+  if (relevantIds.length === 0) return 0;
+  const limit = k ?? retrieved.length;
+  const topK = retrieved.slice(0, limit).map((r) => (typeof r === 'string' ? r : r.id));
+  const relevantSet = new Set(relevantIds);
+  let hit = 0;
+  const seen = new Set<string>();
+  for (const id of topK) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    if (relevantSet.has(id)) hit++;
+  }
+  return hit / relevantSet.size;
 }
 
 /**
@@ -279,25 +386,49 @@ export function faithfulness(
  */
 export function evaluateAnswerSet(
   cases: AnswerEvalCase[],
-  options?: { faithfulness?: FaithfulnessOptions },
+  options?: { faithfulness?: FaithfulnessOptions; citationCoverage?: CitationCoverageOptions },
 ): AnswerEvalSummary {
   if (cases.length === 0) {
-    return { count: 0, exactMatch: 0, f1: 0, faithfulness: undefined, perExample: [] };
+    return {
+      count: 0,
+      exactMatch: 0,
+      f1: 0,
+      faithfulness: undefined,
+      citationCoverage: undefined,
+      perExample: [],
+    };
   }
 
-  const perExample: Array<{ exactMatch: number; f1: number; faithfulness?: number }> = [];
+  const perExample: Array<{
+    exactMatch: number;
+    f1: number;
+    faithfulness?: number;
+    citationCoverage?: number;
+    answerability?: number;
+  }> = [];
   let emSum = 0;
   let f1Sum = 0;
+  let answerabilitySum = 0;
   let faithfulnessSum = 0;
   let faithfulnessCount = 0;
+  let citationSum = 0;
+  let citationCount = 0;
 
   for (const item of cases) {
     const em = exactMatch(item.prediction, item.references);
     const f1 = tokenF1(item.prediction, item.references);
-    const caseEval: { exactMatch: number; f1: number; faithfulness?: number } = {
+    const answerability = answerabilityMatch(item.prediction, item.references);
+    const caseEval: {
+      exactMatch: number;
+      f1: number;
+      faithfulness?: number;
+      citationCoverage?: number;
+      answerability?: number;
+    } = {
       exactMatch: em,
       f1,
     };
+    caseEval.answerability = answerability;
 
     if (item.contexts && item.contexts.length > 0) {
       caseEval.faithfulness = faithfulness(
@@ -307,10 +438,19 @@ export function evaluateAnswerSet(
       );
       faithfulnessSum += caseEval.faithfulness;
       faithfulnessCount++;
+
+      caseEval.citationCoverage = citationCoverage(
+        item.prediction,
+        item.contexts,
+        options?.citationCoverage,
+      );
+      citationSum += caseEval.citationCoverage;
+      citationCount++;
     }
 
     emSum += em;
     f1Sum += f1;
+    answerabilitySum += answerability;
     perExample.push(caseEval);
   }
 
@@ -318,7 +458,9 @@ export function evaluateAnswerSet(
     count: cases.length,
     exactMatch: emSum / cases.length,
     f1: f1Sum / cases.length,
+    answerability: answerabilitySum / cases.length,
     faithfulness: faithfulnessCount > 0 ? faithfulnessSum / faithfulnessCount : undefined,
+    citationCoverage: citationCount > 0 ? citationSum / citationCount : undefined,
     perExample,
   };
 }

@@ -1,4 +1,13 @@
-import { evaluateAnswerSet, exactMatch, faithfulness, tokenF1 } from '../../src/evaluator';
+import {
+  answerabilityMatch,
+  citationCoverage,
+  evaluateAnswerSet,
+  exactMatch,
+  faithfulness,
+  isAnswerable,
+  retrievalRecallAtK,
+  tokenF1,
+} from '../../src/evaluator';
 
 describe('Answer-level metrics', () => {
   it('exactMatch should ignore casing/articles/punctuation', () => {
@@ -39,7 +48,10 @@ describe('Answer-level metrics', () => {
     expect(summary.f1).toBeGreaterThanOrEqual(0);
     expect(summary.f1).toBeLessThanOrEqual(1);
     expect(summary.faithfulness).toBeDefined();
+    expect(summary.citationCoverage).toBeDefined();
     expect(summary.perExample.length).toBe(2);
+    expect(summary.perExample[0].answerability).toBeDefined();
+    expect(summary.perExample[0].citationCoverage).toBeDefined();
   });
 
   it('should handle non-Latin scripts correctly', () => {
@@ -61,5 +73,26 @@ describe('Answer-level metrics', () => {
     expect(tokenF1('', '')).toBe(1);
 
     expect(tokenF1('', 'Paris')).toBe(0);
+  });
+
+  it('should classify answerability consistently', () => {
+    expect(isAnswerable('Paris')).toBe(true);
+    expect(isAnswerable('!!!')).toBe(false);
+    expect(answerabilityMatch('Paris', 'Paris')).toBe(1);
+    expect(answerabilityMatch('Paris', '???')).toBe(0);
+    expect(answerabilityMatch('!!!', '???')).toBe(1);
+  });
+
+  it('should compute citation coverage based on answer tokens in contexts', () => {
+    const coverage = citationCoverage('Paris is in France', [
+      'France has a city called Paris.',
+    ]);
+    expect(coverage).toBeGreaterThan(0.4);
+    expect(coverage).toBeLessThanOrEqual(1);
+  });
+
+  it('should compute retrieval recall@k using labeled relevant IDs', () => {
+    const recall = retrievalRecallAtK(['a', 'b', 'c'], ['b', 'd'], 2);
+    expect(recall).toBeCloseTo(0.5, 10);
   });
 });

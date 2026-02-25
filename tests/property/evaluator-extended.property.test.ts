@@ -1,5 +1,5 @@
 import * as fc from 'fast-check';
-import { keyPointRecall, keyPointPrecision, ndcg } from '../../src/evaluator';
+import { keyPointRecall, keyPointPrecision, ndcg, spanRecall } from '../../src/evaluator';
 
 // Feature: chunk-reordering-library — nDCG metric
 // Validates: nDCG is in [0, 1] and equals 1.0 for perfectly sorted input
@@ -82,5 +82,13 @@ describe('Case-insensitive evaluation', () => {
       ),
       { numRuns: 100 },
     );
+  });
+});
+
+describe('Span recall', () => {
+  it('should behave like keyPointRecall for labeled spans', () => {
+    const spans = ['capital of France', 'Paris'];
+    const texts = ['Paris is the capital of France.'];
+    expect(spanRecall(spans, texts)).toBe(1);
   });
 });

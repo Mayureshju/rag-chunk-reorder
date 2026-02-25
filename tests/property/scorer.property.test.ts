@@ -10,6 +10,7 @@ const chunkArb = fc.record({
     fc.record({
       timestamp: fc.option(fc.double({ min: 0, max: 1e12, noNaN: true }), { nil: undefined }),
       sectionIndex: fc.option(fc.integer({ min: 0, max: 1000 }), { nil: undefined }),
+      sourceReliability: fc.option(fc.double({ min: 0, max: 1, noNaN: true }), { nil: undefined }),
     }),
     { nil: undefined },
   ),
@@ -19,6 +20,7 @@ const weightsArb: fc.Arbitrary<ScoringWeights> = fc.record({
   similarity: fc.double({ min: 0, max: 10, noNaN: true }),
   time: fc.double({ min: 0, max: 10, noNaN: true }),
   section: fc.double({ min: 0, max: 10, noNaN: true }),
+  sourceReliability: fc.double({ min: 0, max: 10, noNaN: true }),
 });
 
 function computeExpectedScore(
@@ -32,6 +34,9 @@ function computeExpectedScore(
   const sections = chunks
     .map((c) => c.metadata?.sectionIndex)
     .filter((s): s is number => s !== undefined);
+  const reliabilities = chunks
+    .map((c) => c.metadata?.sourceReliability)
+    .filter((r): r is number => r !== undefined);
 
   let minTs = 0, maxTs = 0;
   if (timestamps.length > 0) {
@@ -51,13 +56,29 @@ function computeExpectedScore(
     }
   }
 
+  let minRel = 0, maxRel = 0;
+  if (reliabilities.length > 0) {
+    minRel = reliabilities[0]; maxRel = reliabilities[0];
+    for (let i = 1; i < reliabilities.length; i++) {
+      if (reliabilities[i] < minRel) minRel = reliabilities[i];
+      if (reliabilities[i] > maxRel) maxRel = reliabilities[i];
+    }
+  }
+
   const ts = chunk.metadata?.timestamp;
   const sec = chunk.metadata?.sectionIndex;
+  const rel = chunk.metadata?.sourceReliability;
 
   const normTs = ts !== undefined && maxTs !== minTs ? (ts - minTs) / (maxTs - minTs) : 0;
   const normSec = sec !== undefined && maxSec !== minSec ? (sec - minSec) / (maxSec - minSec) : 0;
+  const normRel = rel !== undefined && maxRel !== minRel ? (rel - minRel) / (maxRel - minRel) : 0;
 
-  return chunk.score * weights.similarity + normTs * weights.time + normSec * weights.section;
+  return (
+    chunk.score * weights.similarity +
+    normTs * weights.time +
+    normSec * weights.section +
+    normRel * weights.sourceReliability
+  );
 }
 
 // Feature: chunk-reordering-library, Property 1: Scoring formula correctness
@@ -151,7 +172,12 @@ describe('Scorer robustness with malformed metadata values', () => {
       { id: 'c', text: 'C', score: 0, metadata: { timestamp: 200 } },
     ];
 
-    const scored = scoreChunks(chunks, { similarity: 0, time: 1, section: 0 });
+    const scored = scoreChunks(chunks, {
+      similarity: 0,
+      time: 1,
+      section: 0,
+      sourceReliability: 0,
+    });
     expect(scored.map((c) => c.priorityScore)).toEqual([0, 0, 1]);
   });
 });

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { GlobalStyles } from './styles/GlobalStyles';
 import { Navbar } from './components/Navbar';
+import { AnnouncementBar } from './components/AnnouncementBar';
 import { Hero } from './components/Hero';
 import { Problem } from './components/Problem';
 import { Solution } from './components/Solution';
@@ -12,6 +13,7 @@ import { Features } from './components/Features';
 import { Pipeline } from './components/Pipeline';
 import { Benchmarks } from './components/Benchmarks';
 import { SocialProof } from './components/SocialProof';
+import { DropInRecipes } from './components/DropInRecipes';
 import { ApiReference } from './components/ApiReference';
 import { Installation } from './components/Installation';
 import { Footer } from './components/Footer';
@@ -22,6 +24,7 @@ export default function App() {
   return (
     <>
       <GlobalStyles />
+      <AnnouncementBar />
       <Navbar active={activeSection} onNavigate={setActiveSection} />
       <main>
         <Hero />
@@ -33,6 +36,7 @@ export default function App() {
         <Recipes />
         <Pipeline />
         <Features />
+        <DropInRecipes />
         <Benchmarks />
         <SocialProof />
         <Installation />
