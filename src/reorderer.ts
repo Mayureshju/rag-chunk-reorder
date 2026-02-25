@@ -1,6 +1,6 @@
-import { Chunk, ReorderConfig, ScoredChunk } from './types';
+import { AbortSignalLike, Chunk, CoercionStats, ReorderConfig, ScoredChunk } from './types';
 import { validateConfig, mergeConfig, MergedReorderConfig } from './config';
-import { validateChunks } from './validator';
+import { prepareChunks } from './validator';
 import { ValidationError } from './errors';
 import { scoreChunks } from './scorer';
 import { scoreSpread } from './strategies/score-spread';
@@ -78,7 +78,7 @@ function applyTokenBudgetPrefix(
   const result: Chunk[] = [];
   let totalTokens = 0;
   for (const chunk of chunks) {
-    const tokens = getTokenCount(chunk.text, tokenCounter);
+    const tokens = getTokenCount(chunk, tokenCounter);
     if (totalTokens + tokens > maxTokens) break;
     totalTokens += tokens;
     result.push(chunk);
@@ -99,7 +99,7 @@ function applyTokenBudgetEdgeAware(
   let totalTokens = 0;
 
   for (const idx of buildEdgePriorityOrder(chunks.length)) {
-    const tokens = getTokenCount(chunks[idx].text, tokenCounter);
+    const tokens = getTokenCount(chunks[idx], tokenCounter);
     if (tokens > maxTokens) continue;
     if (totalTokens + tokens > maxTokens) continue;
 
@@ -110,12 +110,96 @@ function applyTokenBudgetEdgeAware(
   return chunks.filter((_, idx) => selectedIndices.has(idx));
 }
 
-function getTokenCount(text: string, tokenCounter: (text: string) => number): number {
-  const tokens = tokenCounter(text);
+function getTokenCount(chunk: Chunk, tokenCounter: (text: string) => number): number {
+  const cached = chunk.tokenCount ?? (chunk.metadata as Record<string, unknown>)?.tokenCount;
+  if (cached !== undefined) {
+    if (typeof cached !== 'number' || !Number.isFinite(cached) || cached < 0) {
+      throw new ValidationError('tokenCount must be a non-negative finite number');
+    }
+    return cached;
+  }
+
+  const tokens = tokenCounter(chunk.text);
   if (typeof tokens !== 'number' || !Number.isFinite(tokens) || tokens < 0) {
     throw new ValidationError('tokenCounter must return a non-negative finite number');
   }
   return tokens;
+}
+
+function createCoercionStats(): CoercionStats {
+  return {
+    coercedScores: 0,
+    droppedMetadataFields: 0,
+    droppedMetadataTimestamp: 0,
+    droppedMetadataSectionIndex: 0,
+    droppedMetadataSourceId: 0,
+    droppedMetadataSourceReliability: 0,
+  };
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, onTimeout: () => void): Promise<T> {
+  let timedOut = false;
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<T>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      timedOut = true;
+      onTimeout();
+      reject(new ValidationError(`reranker timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+  });
+
+  return Promise.race([
+    promise
+      .catch((error) => {
+        if (timedOut) {
+          // Swallow late rejections after timeout to avoid unhandled promise rejections.
+          return new Promise<T>(() => {});
+        }
+        throw error;
+      })
+      .finally(() => {
+        if (timeoutId !== undefined) clearTimeout(timeoutId);
+      }),
+    timeoutPromise,
+  ]);
+}
+
+function createRerankerSignal(
+  externalSignal: AbortSignalLike | undefined,
+  forceController: boolean,
+): { signal?: AbortSignalLike; cleanup: () => void; abort: (reason?: Error) => void } {
+  if (!externalSignal && !forceController) {
+    return { signal: undefined, cleanup: () => {}, abort: () => {} };
+  }
+
+  const Controller = (globalThis as { AbortController?: { new (): { signal: AbortSignalLike; abort: (reason?: unknown) => void } } }).AbortController;
+  if (!Controller) {
+    return { signal: externalSignal, cleanup: () => {}, abort: () => {} };
+  }
+  const controller = new Controller();
+  const onAbort = () => {
+    controller.abort(externalSignal?.reason ?? new ValidationError('reranker aborted'));
+  };
+
+  if (externalSignal) {
+    if (externalSignal.aborted) {
+      onAbort();
+    } else {
+      externalSignal.addEventListener('abort', onAbort);
+    }
+  }
+
+  return {
+    signal: controller.signal,
+    cleanup: () => {
+      if (externalSignal) {
+        externalSignal.removeEventListener('abort', onAbort);
+      }
+    },
+    abort: (reason?: Error) => {
+      controller.abort(reason ?? new ValidationError('reranker aborted'));
+    },
+  };
 }
 
 function resolvePacking(
@@ -196,33 +280,94 @@ export class Reorderer {
     chunks: Chunk[],
     config: MergedReorderConfig,
     query?: string,
+    diagnostics?: { rerankerApplied?: boolean; prepared?: boolean; coercionStats?: CoercionStats },
   ): Chunk[] {
-    if (chunks.length === 0) return [];
-    // Validate input before any filtering/transforms so malformed chunks never
-    // bypass validation (for example via minScore) or trigger raw runtime errors.
-    validateChunks(chunks);
+    const fallbackStrategy: Exclude<ReorderConfig['strategy'], 'auto' | undefined> =
+      config.strategy === 'auto' ? 'scoreSpread' : config.strategy;
+    const coercionStats = diagnostics?.coercionStats ?? createCoercionStats();
 
-    let working = chunks;
+    if (chunks.length === 0) {
+      if (config.onDiagnostics) {
+        try {
+          config.onDiagnostics({
+            inputCount: 0,
+            validatedCount: 0,
+            coercedScores: coercionStats.coercedScores,
+            droppedMetadataFields: coercionStats.droppedMetadataFields,
+            droppedMetadataTimestamp: coercionStats.droppedMetadataTimestamp,
+            droppedMetadataSectionIndex: coercionStats.droppedMetadataSectionIndex,
+            droppedMetadataSourceId: coercionStats.droppedMetadataSourceId,
+            droppedMetadataSourceReliability: coercionStats.droppedMetadataSourceReliability,
+            filteredByMinScore: 0,
+            dedupRemoved: 0,
+            rerankerApplied: diagnostics?.rerankerApplied ?? false,
+            strategyChosen: fallbackStrategy,
+            budgetPruned: 0,
+            outputCount: 0,
+          });
+        } catch {
+          // ignore diagnostics errors
+        }
+      }
+      return [];
+    }
+
+    // Validate/coerce input before any filtering/transforms so malformed chunks never
+    // bypass validation (for example via minScore) or trigger raw runtime errors.
+    let working = diagnostics?.prepared
+      ? chunks
+      : prepareChunks(chunks, config.validationMode, coercionStats);
+    const diagnosticsStats = {
+      inputCount: chunks.length,
+      validatedCount: working.length,
+      coercedScores: coercionStats.coercedScores,
+      droppedMetadataFields: coercionStats.droppedMetadataFields,
+      droppedMetadataTimestamp: coercionStats.droppedMetadataTimestamp,
+      droppedMetadataSectionIndex: coercionStats.droppedMetadataSectionIndex,
+      droppedMetadataSourceId: coercionStats.droppedMetadataSourceId,
+      droppedMetadataSourceReliability: coercionStats.droppedMetadataSourceReliability,
+      filteredByMinScore: 0,
+      dedupRemoved: 0,
+      rerankerApplied: diagnostics?.rerankerApplied ?? false,
+      strategyChosen: fallbackStrategy,
+      budgetPruned: 0,
+      outputCount: 0,
+    };
 
     // Filter by minimum score
     if (config.minScore !== undefined) {
+      const before = working.length;
       working = filterByMinScore(working, config.minScore);
+      diagnosticsStats.filteredByMinScore = before - working.length;
     }
 
     // Deduplicate
     if (config.deduplicate) {
+      const before = working.length;
       working = deduplicateChunks(working, {
         threshold: config.deduplicateThreshold,
         keep: config.deduplicateKeep,
       });
+      diagnosticsStats.dedupRemoved = before - working.length;
     }
 
-    if (working.length === 0) return [];
+    if (working.length === 0) {
+      diagnosticsStats.outputCount = 0;
+      if (config.onDiagnostics) {
+        try {
+          config.onDiagnostics(diagnosticsStats);
+        } catch {
+          // ignore diagnostics errors
+        }
+      }
+      return [];
+    }
 
     const resolvedStrategy: Exclude<ReorderConfig['strategy'], 'auto' | undefined> =
       config.strategy === 'auto'
         ? resolveAutoStrategy(working, query, config.autoStrategy)
         : config.strategy;
+    diagnosticsStats.strategyChosen = resolvedStrategy;
 
     let scored = scoreChunks(working, config.weights);
 
@@ -251,6 +396,7 @@ export class Reorderer {
 
     let output = result.map((c) => stripInternalFields(c, config.includePriorityScore));
     const packing = resolvePacking(config.packing, resolvedStrategy);
+    const preBudgetCount = output.length;
 
     // Apply token budget after reordering.
     // scoreSpread keeps chunks from both edges to preserve primacy/recency placements.
@@ -268,6 +414,16 @@ export class Reorderer {
         packing === 'edgeAware'
           ? takeFromEdges(output, config.topK)
           : output.slice(0, config.topK);
+    }
+
+    diagnosticsStats.budgetPruned = preBudgetCount - output.length;
+    diagnosticsStats.outputCount = output.length;
+    if (config.onDiagnostics) {
+      try {
+        config.onDiagnostics(diagnosticsStats);
+      } catch {
+        // ignore diagnostics errors
+      }
     }
 
     return output;
@@ -300,16 +456,46 @@ export class Reorderer {
   ): Promise<Chunk[]> {
     const config = this.mergeOverrides(overrides);
 
-    if (chunks.length === 0) return [];
+    if (chunks.length === 0) {
+      return this.executePipelineWithConfig(chunks, config, query, { rerankerApplied: false });
+    }
 
-    let workingChunks = chunks;
+    const inputCoercion = createCoercionStats();
+    let workingChunks = prepareChunks(chunks, config.validationMode, inputCoercion);
+    let rerankerApplied = false;
+    let coercionStats = inputCoercion;
 
     if (config.reranker && query) {
       try {
-        const reranked = await config.reranker.rerank(chunks, query);
-        // Validate reranker output early so we can fall back gracefully.
-        validateChunks(reranked);
-        workingChunks = reranked;
+        const { signal, cleanup, abort } = createRerankerSignal(
+          config.rerankerAbortSignal,
+          config.rerankerTimeoutMs !== undefined,
+        );
+        try {
+          if (signal?.aborted) {
+            throw signal.reason ?? new ValidationError('reranker aborted');
+          }
+          const rerankPromise = config.reranker.rerank(
+            workingChunks,
+            query,
+            signal ? { signal } : undefined,
+          );
+          const reranked = config.rerankerTimeoutMs !== undefined
+            ? await withTimeout(
+                rerankPromise,
+                config.rerankerTimeoutMs,
+                () => abort(new ValidationError(`reranker timed out after ${config.rerankerTimeoutMs}ms`)),
+              )
+            : await rerankPromise;
+
+          const rerankCoercion = createCoercionStats();
+          // Validate/coerce reranker output early so we can fall back gracefully.
+          workingChunks = prepareChunks(reranked, config.validationMode, rerankCoercion);
+          coercionStats = rerankCoercion;
+          rerankerApplied = true;
+        } finally {
+          cleanup();
+        }
       } catch (error) {
         if (config.onRerankerError) {
           config.onRerankerError(error);
@@ -318,7 +504,11 @@ export class Reorderer {
       }
     }
 
-    return this.executePipelineWithConfig(workingChunks, config, query);
+    return this.executePipelineWithConfig(workingChunks, config, query, {
+      rerankerApplied,
+      prepared: true,
+      coercionStats,
+    });
   }
 
   /**

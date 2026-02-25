@@ -29,16 +29,20 @@ function minMax(values: number[]): [number, number] {
 export function scoreChunks(chunks: Chunk[], weights: ScoringWeights): ScoredChunk[] {
   const definedTimestamps: number[] = [];
   const definedSections: number[] = [];
+  const definedReliability: number[] = [];
 
   for (const c of chunks) {
     const timestamp = finiteOrUndefined(c.metadata?.timestamp);
     const sectionIndex = finiteOrUndefined(c.metadata?.sectionIndex);
+    const reliability = finiteOrUndefined(c.metadata?.sourceReliability);
     if (timestamp !== undefined) definedTimestamps.push(timestamp);
     if (sectionIndex !== undefined) definedSections.push(sectionIndex);
+    if (reliability !== undefined) definedReliability.push(reliability);
   }
 
   const [minTs, maxTs] = minMax(definedTimestamps);
   const [minSec, maxSec] = minMax(definedSections);
+  const [minRel, maxRel] = minMax(definedReliability);
 
   return chunks.map((chunk, index) => {
     const normalizedTime = normalize(finiteOrUndefined(chunk.metadata?.timestamp), minTs, maxTs);
@@ -47,11 +51,17 @@ export function scoreChunks(chunks: Chunk[], weights: ScoringWeights): ScoredChu
       minSec,
       maxSec,
     );
+    const normalizedReliability = normalize(
+      finiteOrUndefined(chunk.metadata?.sourceReliability),
+      minRel,
+      maxRel,
+    );
 
     const priorityScore =
       chunk.score * weights.similarity +
       normalizedTime * weights.time +
-      normalizedSection * weights.section;
+      normalizedSection * weights.section +
+      normalizedReliability * weights.sourceReliability;
 
     return {
       ...chunk,

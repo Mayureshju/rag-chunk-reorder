@@ -5,6 +5,8 @@ import {
   ReorderConfig,
   ScoringWeights,
   Strategy,
+  ValidationMode,
+  AbortSignalLike,
 } from './types';
 import { ValidationError } from './errors';
 
@@ -26,11 +28,13 @@ const VALID_STRATEGIES: Strategy[] = [
 ];
 
 const VALID_PACKING: PackingStrategy[] = ['auto', 'prefix', 'edgeAware'];
+const VALID_VALIDATION_MODES: ValidationMode[] = ['strict', 'coerce'];
 
 const DEFAULT_WEIGHTS: ScoringWeights = {
   similarity: 1.0,
   time: 0,
   section: 0,
+  sourceReliability: 0,
 };
 
 const DEFAULT_AUTO_STRATEGY: AutoStrategyConfig = {
@@ -128,6 +132,28 @@ export function validateConfig(config: ReorderConfig): void {
     }
   }
 
+  if (config.rerankerTimeoutMs !== undefined) {
+    if (
+      typeof config.rerankerTimeoutMs !== 'number' ||
+      !Number.isFinite(config.rerankerTimeoutMs) ||
+      config.rerankerTimeoutMs < 0
+    ) {
+      throw new ValidationError('rerankerTimeoutMs must be a non-negative finite number');
+    }
+  }
+
+  if (config.rerankerAbortSignal !== undefined) {
+    const signal = config.rerankerAbortSignal as AbortSignalLike;
+    if (
+      typeof signal !== 'object' ||
+      signal === null ||
+      typeof signal.aborted !== 'boolean' ||
+      typeof signal.addEventListener !== 'function'
+    ) {
+      throw new ValidationError('rerankerAbortSignal must be an AbortSignal');
+    }
+  }
+
   if (config.deduplicateThreshold !== undefined) {
     if (
       typeof config.deduplicateThreshold !== 'number' ||
@@ -168,6 +194,14 @@ export function validateConfig(config: ReorderConfig): void {
     ) {
       throw new ValidationError('weights.section must be a non-negative finite number');
     }
+    if (
+      w.sourceReliability !== undefined &&
+      (typeof w.sourceReliability !== 'number' ||
+        !Number.isFinite(w.sourceReliability) ||
+        w.sourceReliability < 0)
+    ) {
+      throw new ValidationError('weights.sourceReliability must be a non-negative finite number');
+    }
   }
 
   if (config.topK !== undefined && (typeof config.topK !== 'number' || config.topK < 1 || !Number.isInteger(config.topK))) {
@@ -177,6 +211,15 @@ export function validateConfig(config: ReorderConfig): void {
   if (config.packing !== undefined && !VALID_PACKING.includes(config.packing)) {
     throw new ValidationError(
       `Invalid packing '${config.packing}'. Valid values: ${VALID_PACKING.join(', ')}`,
+    );
+  }
+
+  if (
+    config.validationMode !== undefined &&
+    !VALID_VALIDATION_MODES.includes(config.validationMode as ValidationMode)
+  ) {
+    throw new ValidationError(
+      `Invalid validationMode '${config.validationMode}'. Valid values: ${VALID_VALIDATION_MODES.join(', ')}`,
     );
   }
 
@@ -253,11 +296,14 @@ export function mergeConfig(config?: Partial<ReorderConfig>): MergedReorderConfi
     endCount: config?.endCount,
     groupBy: config?.groupBy,
     reranker: config?.reranker,
+    rerankerAbortSignal: config?.rerankerAbortSignal,
+    rerankerTimeoutMs: config?.rerankerTimeoutMs,
     customComparator: config?.customComparator,
     minScore: config?.minScore,
     maxTokens: config?.maxTokens,
     tokenCounter: config?.tokenCounter,
     onRerankerError: config?.onRerankerError,
+    onDiagnostics: config?.onDiagnostics,
     includePriorityScore: config?.includePriorityScore,
     deduplicate: config?.deduplicate,
     deduplicateThreshold: config?.deduplicateThreshold,
@@ -271,6 +317,7 @@ export function mergeConfig(config?: Partial<ReorderConfig>): MergedReorderConfi
     },
     diversity: { ...DEFAULT_DIVERSITY, ...config?.diversity },
     packing: config?.packing ?? 'auto',
+    validationMode: config?.validationMode ?? 'strict',
   };
   return merged;
 }

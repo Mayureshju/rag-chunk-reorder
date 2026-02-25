@@ -25,6 +25,7 @@ export function ApiReference() {
   const standalone = [
     { name: 'scoreChunks(chunks, weights)', desc: 'Compute priority scores from weights + metadata' },
     { name: 'validateChunks(chunks)', desc: 'Validate chunk array (id, text, score)' },
+    { name: 'prepareChunks(chunks, mode?)', desc: 'Validate or coerce chunks' },
     { name: 'validateConfig(config)', desc: 'Validate configuration object' },
     { name: 'mergeConfig(config)', desc: 'Merge partial config with defaults' },
     { name: 'deduplicateChunks(chunks, opts?)', desc: 'Remove exact or fuzzy duplicates' },
@@ -37,8 +38,17 @@ export function ApiReference() {
     { name: 'rerankWithDiversity(chunks, config)', desc: 'MMR-style diversity rerank' },
     { name: 'keyPointRecall(kp, texts, opts?)', desc: 'Fraction of key points found in texts' },
     { name: 'keyPointPrecision(kp, texts, opts?)', desc: 'Fraction of texts containing a key point' },
+    { name: 'spanRecall(spans, texts, opts?)', desc: 'Relevant span recall metric' },
     { name: 'positionEffectiveness(chunks)', desc: 'U-shaped position weighting score' },
     { name: 'ndcg(scores)', desc: 'Normalized Discounted Cumulative Gain' },
+    { name: 'exactMatch(prediction, refs)', desc: 'Answer exact-match score' },
+    { name: 'isAnswerable(text)', desc: 'Answerable/unanswerable classifier' },
+    { name: 'answerabilityMatch(prediction, refs)', desc: 'Answerability agreement score' },
+    { name: 'tokenF1(prediction, refs)', desc: 'Answer token-level F1' },
+    { name: 'citationCoverage(prediction, contexts, opts?)', desc: 'Answer token coverage in contexts' },
+    { name: 'faithfulness(prediction, contexts, opts?)', desc: 'Answer faithfulness to contexts' },
+    { name: 'retrievalRecallAtK(retrieved, relevantIds, k?)', desc: 'Retrieval recall@k' },
+    { name: 'evaluateAnswerSet(cases)', desc: 'Aggregate answer evaluation' },
   ];
 
   return (
@@ -91,6 +101,7 @@ const r = new Reorderer(config?: ReorderConfig);`}</pre>
   id: string;
   text: string;
   score: number;
+  tokenCount?: number;
   metadata?: ChunkMetadata;
 }
 
@@ -99,15 +110,19 @@ interface ChunkMetadata {
   page?: number;
   sectionIndex?: number;
   sourceId?: string | number | boolean;
+  sourceReliability?: number;
+  tokenCount?: number;
   [key: string]: unknown;
 }
 
 interface Reranker {
-  rerank(chunks: Chunk[], query: string): Promise<Chunk[]>;
+  rerank(chunks: Chunk[], query: string, options?: { signal?: AbortSignal }): Promise<Chunk[]>;
 }
 
 type Strategy = 'scoreSpread' | 'preserveOrder'
-  | 'chronological' | 'custom' | 'auto';`}</pre>
+  | 'chronological' | 'custom' | 'auto';
+
+type ValidationMode = 'strict' | 'coerce';`}</pre>
       </div>
     </section>
   );

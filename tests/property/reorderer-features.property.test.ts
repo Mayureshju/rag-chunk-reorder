@@ -80,6 +80,30 @@ describe('Validation before filtering and deduplication', () => {
     await expect(reorderer.reorder(malformed, 'query')).rejects.toThrow(ValidationError);
   });
 
+  it('should validate before calling reranker in async reorder()', async () => {
+    const reranker = {
+      async rerank() {
+        throw new Error('Reranker should not run on invalid chunks');
+      },
+    };
+    const reorderer = new Reorderer({ reranker });
+    const malformed = [{ id: 'x', text: undefined, score: 0.5 }] as unknown as Chunk[];
+
+    await expect(reorderer.reorder(malformed, 'query')).rejects.toThrow(ValidationError);
+  });
+
+  it('should validate before calling reranker in async reorder()', async () => {
+    const reranker = {
+      async rerank() {
+        throw new Error('Reranker should not run on invalid chunks');
+      },
+    };
+    const reorderer = new Reorderer({ reranker });
+    const malformed = [{ id: 'x', text: undefined, score: 0.5 }] as unknown as Chunk[];
+
+    await expect(reorderer.reorder(malformed, 'query')).rejects.toThrow(ValidationError);
+  });
+
   it('should reject non-finite metadata timestamp values', () => {
     const reorderer = new Reorderer();
     const malformed = [

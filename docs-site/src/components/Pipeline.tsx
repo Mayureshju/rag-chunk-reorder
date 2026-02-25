@@ -1,20 +1,22 @@
 export function Pipeline() {
   const steps = [
-    { num: 1, label: 'minScore Filter', desc: 'Drop chunks below threshold', icon: '🎯', color: 'var(--red)' },
-    { num: 2, label: 'Deduplicate', desc: 'Remove exact/fuzzy duplicates', icon: '🧹', color: 'var(--orange)' },
-    { num: 3, label: 'Validate', desc: 'Check id, text, score fields', icon: '✅', color: 'var(--yellow)' },
+    { num: 1, label: 'Validate/Coerce', desc: 'Check id, text, score fields', icon: '✅', color: 'var(--yellow)' },
+    { num: 2, label: 'minScore Filter', desc: 'Drop chunks below threshold', icon: '🎯', color: 'var(--red)' },
+    { num: 3, label: 'Deduplicate', desc: 'Remove exact/fuzzy duplicates', icon: '🧹', color: 'var(--orange)' },
     { num: 4, label: 'Score', desc: 'Compute priorityScore from weights', icon: '📊', color: 'var(--green)' },
-    { num: 5, label: 'Group', desc: 'Partition by metadata field', icon: '📦', color: 'var(--blue)' },
-    { num: 6, label: 'Strategy', desc: 'Apply reordering algorithm', icon: '🔀', color: 'var(--accent-light)' },
-    { num: 7, label: 'Strip Internals', desc: 'Remove priorityScore/originalIndex', icon: '🧼', color: 'var(--accent)' },
-    { num: 8, label: 'Token Budget', desc: 'Trim to fit context window', icon: '📏', color: 'var(--orange)' },
-    { num: 9, label: 'Top-K', desc: 'Limit output count', icon: '🔝', color: 'var(--yellow)' },
+    { num: 5, label: 'Diversity Rerank', desc: 'MMR + source diversity', icon: '🧩', color: 'var(--blue)', optional: true },
+    { num: 6, label: 'Auto Strategy', desc: 'Route based on query intent', icon: '🧭', color: 'var(--accent-light)', optional: true },
+    { num: 7, label: 'Group', desc: 'Partition by metadata field', icon: '📦', color: 'var(--blue)', optional: true },
+    { num: 8, label: 'Strategy', desc: 'Apply reordering algorithm', icon: '🔀', color: 'var(--accent-light)' },
+    { num: 9, label: 'Strip Internals', desc: 'Remove priorityScore/originalIndex', icon: '🧼', color: 'var(--accent)' },
+    { num: 10, label: 'Token Budget', desc: 'Trim to fit context window', icon: '📏', color: 'var(--orange)' },
+    { num: 11, label: 'Top-K', desc: 'Limit output count', icon: '🔝', color: 'var(--yellow)' },
   ];
 
   return (
     <section id="pipeline">
       <div className="section-label">Architecture</div>
-      <h2>9-Step Processing Pipeline</h2>
+      <h2>Processing Pipeline</h2>
       <p style={{ marginBottom: 32 }}>
         Every call flows through a deterministic pipeline. Each step is optional and configurable.
       </p>
@@ -55,7 +57,7 @@ export function Pipeline() {
                   <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>{s.label}</div>
                   <div style={{ fontSize: '0.82rem', color: 'var(--text-dim)' }}>{s.desc}</div>
                 </div>
-                {s.num === 5 && (
+                {s.optional && (
                   <span className="badge badge-blue" style={{ marginLeft: 'auto' }}>Optional</span>
                 )}
               </div>

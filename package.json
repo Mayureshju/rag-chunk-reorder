@@ -1,6 +1,6 @@
 {
   "name": "rag-chunk-reorder",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "RAG chunk reordering, retrieval reranking, and context packing to mitigate lost-in-the-middle in LLM context windows",
   "main": "dist/cjs/index.js",
   "types": "dist/cjs/index.d.ts",

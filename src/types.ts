@@ -8,6 +8,10 @@ export interface ChunkMetadata {
   sectionIndex?: number;
   /** Identifier of the source document */
   sourceId?: string | number | boolean;
+  /** Optional source reliability score (0–1 recommended) */
+  sourceReliability?: number;
+  /** Optional precomputed token count for faster budgeting */
+  tokenCount?: number;
   [key: string]: unknown;
 }
 
@@ -19,6 +23,8 @@ export interface Chunk {
   text: string;
   /** Relevance score from retrieval (typically 0–1) */
   score: number;
+  /** Optional precomputed token count for budgeting */
+  tokenCount?: number;
   /** Optional metadata for scoring and strategy selection */
   metadata?: ChunkMetadata;
 }
@@ -34,6 +40,9 @@ export interface ScoredChunk extends Chunk {
 /** Available reordering strategies. */
 export type Strategy = 'scoreSpread' | 'preserveOrder' | 'chronological' | 'custom' | 'auto';
 
+/** Validation behavior for inputs. */
+export type ValidationMode = 'strict' | 'coerce';
+
 /** Query intent used by auto strategy selection. */
 export type QueryIntent = 'factoid' | 'narrative' | 'temporal';
 
@@ -48,6 +57,8 @@ export interface ScoringWeights {
   time: number;
   /** Weight for the normalized section index */
   section: number;
+  /** Weight for the normalized source reliability */
+  sourceReliability: number;
 }
 
 /** Controls automatic strategy selection based on query intent and metadata coverage. */
@@ -80,6 +91,13 @@ export interface DiversityConfig {
 export type PackingStrategy = 'auto' | 'prefix' | 'edgeAware';
 
 /** Configuration for the Reorderer. All fields are optional with sensible defaults. */
+export interface AbortSignalLike {
+  readonly aborted: boolean;
+  readonly reason?: unknown;
+  addEventListener(type: 'abort', listener: () => void): void;
+  removeEventListener(type: 'abort', listener: () => void): void;
+}
+
 export interface ReorderConfig {
   /** Reordering algorithm. Default: 'scoreSpread' */
   strategy?: Strategy;
@@ -93,6 +111,10 @@ export interface ReorderConfig {
   groupBy?: string;
   /** External reranker to refine scores before reordering */
   reranker?: Reranker;
+  /** Abort signal for reranker (optional). */
+  rerankerAbortSignal?: AbortSignalLike;
+  /** Timeout for reranker in milliseconds (optional). */
+  rerankerTimeoutMs?: number;
   /** Comparison function for the 'custom' strategy */
   customComparator?: CustomComparator;
   /** Minimum score threshold — chunks below this are dropped before reordering */
@@ -119,10 +141,46 @@ export interface ReorderConfig {
   diversity?: DiversityConfig;
   /** Budget packing policy used for maxTokens/topK. Default: 'auto'. */
   packing?: PackingStrategy;
+  /** Validation mode for inputs. Default: 'strict'. */
+  validationMode?: ValidationMode;
+  /** Structured diagnostics emitted per reorder call. */
+  onDiagnostics?: (stats: ReorderDiagnostics) => void;
+}
+
+/** Diagnostics emitted per reorder call. */
+export interface ReorderDiagnostics {
+  inputCount: number;
+  validatedCount: number;
+  coercedScores: number;
+  droppedMetadataFields: number;
+  droppedMetadataTimestamp: number;
+  droppedMetadataSectionIndex: number;
+  droppedMetadataSourceId: number;
+  droppedMetadataSourceReliability: number;
+  filteredByMinScore: number;
+  dedupRemoved: number;
+  rerankerApplied: boolean;
+  strategyChosen: Exclude<Strategy, 'auto'>;
+  budgetPruned: number;
+  outputCount: number;
 }
 
 /** Interface for external rerankers (e.g., cross-encoder models). */
 export interface Reranker {
   /** Refine chunk scores given a query. Returns chunks with updated scores. */
-  rerank(chunks: Chunk[], query: string): Promise<Chunk[]>;
+  rerank(
+    chunks: Chunk[],
+    query: string,
+    options?: { signal?: AbortSignalLike },
+  ): Promise<Chunk[]>;
+}
+
+/** Coercion counters used in diagnostics. */
+export interface CoercionStats {
+  coercedScores: number;
+  droppedMetadataFields: number;
+  droppedMetadataTimestamp: number;
+  droppedMetadataSectionIndex: number;
+  droppedMetadataSourceId: number;
+  droppedMetadataSourceReliability: number;
 }

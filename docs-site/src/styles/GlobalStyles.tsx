@@ -42,6 +42,7 @@ export function GlobalStyles() {
         padding: 80px 24px;
         max-width: 1100px;
         margin: 0 auto;
+        scroll-margin-top: 120px;
       }
 
       h2 {
@@ -124,10 +125,103 @@ export function GlobalStyles() {
         gap: 20px;
       }
 
+      .navbar {
+        position: fixed;
+        top: 40px;
+        left: 0;
+        right: 0;
+        z-index: 100;
+        background: rgba(10,10,15,0.85);
+        backdrop-filter: blur(12px);
+        border-bottom: 1px solid var(--border);
+        padding: 0 24px;
+      }
+
+      .navbar-inner {
+        max-width: 1100px;
+        margin: 0 auto;
+        display: flex;
+        align-items: center;
+        gap: 18px;
+        height: 56px;
+      }
+
+      .navbar-brand {
+        font-family: var(--mono);
+        font-weight: 700;
+        font-size: 1rem;
+        color: var(--accent-light);
+        text-decoration: none;
+        white-space: nowrap;
+      }
+
+      .navbar-links {
+        display: flex;
+        gap: 16px;
+        align-items: center;
+        flex: 1 1 auto;
+        overflow-x: auto;
+        white-space: nowrap;
+        scrollbar-width: none;
+      }
+
+      .navbar-links::-webkit-scrollbar { display: none; }
+
+      .navbar-link {
+        font-size: 0.82rem;
+        font-weight: 500;
+        color: var(--text-dim);
+        text-decoration: none;
+        transition: color 0.2s;
+      }
+
+      .navbar-link.active { color: var(--accent-light); }
+
+      .navbar-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-shrink: 0;
+      }
+
+      .nav-badges {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .nav-pill {
+        font-size: 0.78rem;
+        font-weight: 600;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 4px 10px;
+        text-decoration: none;
+      }
+
+      .nav-pill-npm { color: var(--green); }
+      .nav-pill-github { color: var(--accent-light); }
+
+      @media (max-width: 1024px) {
+        .nav-badges { display: none; }
+      }
+
+      @media (max-width: 860px) {
+        .navbar-inner {
+          height: auto;
+          padding: 8px 0;
+          flex-wrap: wrap;
+          gap: 10px;
+        }
+        .navbar-links { order: 3; width: 100%; }
+        .navbar-actions { order: 2; width: 100%; justify-content: flex-end; }
+      }
+
       @media (max-width: 768px) {
         section { padding: 48px 16px; }
         h2 { font-size: 1.6rem; }
         .grid-2, .grid-3 { grid-template-columns: 1fr; }
+        .navbar { padding: 0 16px; }
       }
 
       .badge {

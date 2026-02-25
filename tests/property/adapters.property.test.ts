@@ -79,7 +79,7 @@ describe('Framework adapters', () => {
     ];
 
     const result = await reorderLangChainPairs(pairs, {
-      config: { strategy: 'scoreSpread' },
+      config: { strategy: 'scoreSpread', validationMode: 'coerce' },
     });
 
     expect(result.map(([d]) => d.id)).toEqual(['good', 'bad']);
@@ -92,7 +92,7 @@ describe('Framework adapters', () => {
     ];
 
     const result = await reorderLlamaIndexNodes(nodes, {
-      config: { strategy: 'scoreSpread' },
+      config: { strategy: 'scoreSpread', validationMode: 'coerce' },
     });
 
     expect(result.map((n) => n.id_)).toEqual(['n1', 'n2']);
@@ -105,7 +105,7 @@ describe('Framework adapters', () => {
     ];
 
     const result = await reorderHaystackDocuments(docs, {
-      config: { strategy: 'scoreSpread' },
+      config: { strategy: 'scoreSpread', validationMode: 'coerce' },
     });
 
     expect(result.map((d) => d.id)).toEqual(['h-good', 'h-bad']);
