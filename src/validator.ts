@@ -58,6 +58,13 @@ function coerceChunk(rawChunk: unknown, index: number, stats?: CoercionStats): C
           stats.droppedMetadataSectionIndex += 1;
         }
       }
+      const chunkId = normalized.chunkId;
+      if (chunkId !== undefined && typeof chunkId !== 'string') {
+        delete normalized.chunkId;
+        if (stats) {
+          stats.droppedMetadataFields += 1;
+        }
+      }
       const sourceId = normalized.sourceId;
       if (
         sourceId !== undefined &&
@@ -153,6 +160,13 @@ export function validateChunks(chunks: Chunk[]): void {
       if (sectionIndex !== undefined && (typeof sectionIndex !== 'number' || !Number.isFinite(sectionIndex))) {
         throw new ValidationError(
           `Chunk at index ${i} has invalid metadata.sectionIndex (must be a finite number)`,
+        );
+      }
+
+      const chunkId = (chunk.metadata as Record<string, unknown>).chunkId;
+      if (chunkId !== undefined && typeof chunkId !== 'string') {
+        throw new ValidationError(
+          `Chunk at index ${i} has invalid metadata.chunkId (must be a string)`,
         );
       }
 

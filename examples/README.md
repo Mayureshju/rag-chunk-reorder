@@ -24,7 +24,13 @@ Run a lightweight before/after evaluation on a JSONL dataset:
 
 ```bash
 npm run build
-node examples/eval-cli.js --input examples/data/sample-eval.jsonl --strategy scoreSpread --topK 4 --ciSamples 500
+node examples/eval-cli.js --input examples/data/sample-eval.jsonl --strategy scoreSpread --topK 4 --ciSamples 500 --seed 42
+```
+
+Generate a markdown report you can drop into README:
+
+```bash
+node examples/eval-cli.js --input examples/data/sample-eval.jsonl --report eval-report.md
 ```
 
 JSONL schema (one object per line):

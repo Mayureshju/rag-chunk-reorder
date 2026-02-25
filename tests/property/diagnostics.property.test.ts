@@ -32,9 +32,15 @@ describe('Diagnostics hook', () => {
     expect(latest.droppedMetadataFields).toBe(0);
     expect(latest.filteredByMinScore).toBe(1);
     expect(latest.dedupRemoved).toBe(1);
+    expect(latest.dedupStrategyUsed).toBe('exact');
     expect(latest.budgetPruned).toBe(1);
     expect(latest.outputCount).toBe(1);
     expect(latest.strategyChosen).toBe('scoreSpread');
+    expect(latest.packingStrategyUsed).toBe('edgeAware');
+    expect(latest.tokenCountUsed).toBe(0);
+    expect(latest.cachedTokenCountUsed).toBe(0);
+    expect(latest.charCountUsed).toBe(0);
+    expect(latest.budgetUnit).toBe('none');
     expect(latest.rerankerApplied).toBe(false);
   });
 
@@ -58,6 +64,32 @@ describe('Diagnostics hook', () => {
 
     await reorderer.reorder(chunks, 'query');
     expect(latest?.rerankerApplied).toBe(true);
+    expect(latest?.dedupStrategyUsed).toBe('none');
+    expect(latest?.packingStrategyUsed).toBe('edgeAware');
+  });
+
+  it('should report charCountUsed when maxChars budget is used', () => {
+    let latest: ReorderDiagnostics | undefined;
+    const reorderer = new Reorderer({
+      strategy: 'chronological',
+      maxChars: 2,
+      charCounter: () => 1,
+      onDiagnostics: (stats) => {
+        latest = stats;
+      },
+    });
+
+    const chunks = [
+      { id: 'a', text: 'AA', score: 0.9 },
+      { id: 'b', text: 'BBB', score: 0.8 },
+      { id: 'c', text: 'CCCC', score: 0.7 },
+    ];
+
+    const result = reorderer.reorderSync(chunks);
+    expect(result.map((c) => c.id)).toEqual(['a', 'b']);
+    expect(latest?.charCountUsed).toBe(2);
+    expect(latest?.tokenCountUsed).toBe(0);
+    expect(latest?.budgetUnit).toBe('chars');
   });
 });
 

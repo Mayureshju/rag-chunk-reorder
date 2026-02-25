@@ -1,30 +1,13 @@
 export function AnnouncementBar() {
   return (
-    <div style={{
-      position: 'fixed',
-      top: 0,
-      left: 0,
-      right: 0,
-      zIndex: 110,
-      background: 'linear-gradient(90deg, rgba(108,99,255,0.25), rgba(96,165,250,0.25))',
-      borderBottom: '1px solid var(--border)',
-      color: 'var(--text)',
-    }}>
-      <div style={{
-        maxWidth: 1100,
-        margin: '0 auto',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '8px 24px',
-        gap: 16,
-        fontSize: '0.85rem',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+    <div className="announcement-bar">
+      <div className="announcement-inner">
+        <div className="announcement-text">
           <span style={{ fontWeight: 700, color: 'var(--accent-light)' }}>New:</span>
-          <span>Benchmarks + eval CLI shipped. See before/after context quality gains.</span>
+          <span className="announcement-long">Reranker batching, maxChars fallback, and richer diagnostics are live.</span>
+          <span className="announcement-short">Batching + maxChars + diagnostics shipped.</span>
         </div>
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+        <div className="announcement-actions">
           <a
             href="#benchmarks"
             style={{

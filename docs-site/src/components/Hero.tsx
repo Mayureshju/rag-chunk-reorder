@@ -11,15 +11,15 @@ export function Hero() {
   };
 
   return (
-    <section id="hero" style={{ paddingTop: 180, textAlign: 'center' }}>
+    <section id="hero" className="hero-section">
       <div className="badge badge-purple" style={{ marginBottom: 16 }}>Open Source · MIT License</div>
-      <h1 style={{ fontSize: '3.2rem', fontWeight: 800, lineHeight: 1.15, marginBottom: 16 }}>
+      <h1 className="hero-title">
         <span style={{ color: 'var(--accent-light)' }}>rag-chunk-reorder</span>
       </h1>
-      <p style={{ fontSize: '1.25rem', maxWidth: 620, margin: '0 auto 32px', color: 'var(--text-dim)' }}>
+      <p className="hero-subtitle">
         Context-aware chunk reordering for RAG pipelines. Put the right information where LLMs actually pay attention.
       </p>
-      <div style={{ display: 'flex', justifyContent: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 24 }}>
+      <div className="hero-cta-row" style={{ display: 'flex', justifyContent: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 24 }}>
         <a
           href="https://www.npmjs.com/package/rag-chunk-reorder"
           target="_blank"
@@ -82,16 +82,16 @@ export function Hero() {
           Benchmark results
         </a>
       </div>
-      <div style={{ display: 'flex', justifyContent: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 6 }}>
+      <div className="hero-points" style={{ display: 'flex', justifyContent: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 6 }}>
         {[
           'Lost-in-the-middle fixes',
-          'Budget-aware packing',
-          'Eval CLI + benchmarks',
+          'Reranker batching',
+          'MaxChars fallback + diagnostics',
         ].map((point) => (
           <span key={point} style={{ fontSize: '0.78rem', color: 'var(--text-dim)' }}>• {point}</span>
         ))}
       </div>
-      <div style={{
+      <div className="hero-install" style={{
         display: 'inline-flex', alignItems: 'center', gap: 12,
         background: 'var(--bg-card)', border: '1px solid var(--border)',
         borderRadius: 'var(--radius)', padding: '12px 20px', cursor: 'pointer',
@@ -103,7 +103,7 @@ export function Hero() {
         {copied ? '✓ Copied' : '📋'}
       </span>
       </div>
-      <p style={{ margin: '18px auto 0', fontSize: '0.9rem', color: 'var(--text-dim)', maxWidth: 640 }}>
+      <p className="hero-footnote" style={{ margin: '18px auto 0', fontSize: '0.9rem', color: 'var(--text-dim)', maxWidth: 640 }}>
         Drop-in adapters for LangChain, LlamaIndex, and Haystack. Built-in diagnostics, eval harness, and
         budget-aware packing.
       </p>

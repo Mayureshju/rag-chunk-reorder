@@ -17,6 +17,8 @@ export function GlobalStyles() {
         --yellow: #facc15;
         --blue: #60a5fa;
         --radius: 12px;
+        --announce-height: 40px;
+        --navbar-height: 56px;
         --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
         --mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
       }
@@ -42,7 +44,30 @@ export function GlobalStyles() {
         padding: 80px 24px;
         max-width: 1100px;
         margin: 0 auto;
-        scroll-margin-top: 120px;
+        scroll-margin-top: calc(var(--announce-height) + var(--navbar-height) + 24px);
+      }
+
+      .hero-section {
+        padding-top: calc(var(--announce-height) + var(--navbar-height) + 100px);
+        text-align: center;
+      }
+
+      .hero-title {
+        font-size: 3.2rem;
+        font-weight: 800;
+        line-height: 1.15;
+        margin-bottom: 16px;
+      }
+
+      .hero-subtitle {
+        font-size: 1.25rem;
+        max-width: 620px;
+        margin: 0 auto 32px;
+        color: var(--text-dim);
+      }
+
+      .hero-install {
+        max-width: 100%;
       }
 
       h2 {
@@ -127,7 +152,7 @@ export function GlobalStyles() {
 
       .navbar {
         position: fixed;
-        top: 40px;
+        top: var(--announce-height);
         left: 0;
         right: 0;
         z-index: 100;
@@ -143,7 +168,8 @@ export function GlobalStyles() {
         display: flex;
         align-items: center;
         gap: 18px;
-        height: 56px;
+        height: var(--navbar-height);
+        min-width: 0;
       }
 
       .navbar-brand {
@@ -162,6 +188,7 @@ export function GlobalStyles() {
         flex: 1 1 auto;
         overflow-x: auto;
         white-space: nowrap;
+        min-width: 0;
         scrollbar-width: none;
       }
 
@@ -182,6 +209,7 @@ export function GlobalStyles() {
         align-items: center;
         gap: 10px;
         flex-shrink: 0;
+        flex-wrap: wrap;
       }
 
       .nav-badges {
@@ -202,6 +230,72 @@ export function GlobalStyles() {
       .nav-pill-npm { color: var(--green); }
       .nav-pill-github { color: var(--accent-light); }
 
+      .announcement-bar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        z-index: 110;
+        background: linear-gradient(90deg, rgba(108,99,255,0.25), rgba(96,165,250,0.25));
+        border-bottom: 1px solid var(--border);
+        color: var(--text);
+        height: var(--announce-height);
+      }
+
+      .announcement-inner {
+        max-width: 1100px;
+        margin: 0 auto;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 24px;
+        gap: 16px;
+        font-size: 0.85rem;
+        min-width: 0;
+      }
+
+      .announcement-text {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        min-width: 0;
+      }
+
+      .announcement-short { display: none; }
+
+      .announcement-actions {
+        display: flex;
+        gap: 10px;
+        flex-shrink: 0;
+      }
+
+      .bench-table {
+        display: grid;
+        gap: 10px;
+        font-size: 0.85rem;
+      }
+
+      .bench-header,
+      .bench-row {
+        display: grid;
+        grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr);
+        gap: 16px;
+        align-items: center;
+      }
+
+      .bench-row {
+        padding: 8px 0;
+        border-bottom: 1px dashed var(--border);
+      }
+
+      .bench-row:last-child {
+        border-bottom: none;
+      }
+
       @media (max-width: 1024px) {
         .nav-badges { display: none; }
       }
@@ -217,11 +311,47 @@ export function GlobalStyles() {
         .navbar-actions { order: 2; width: 100%; justify-content: flex-end; }
       }
 
+      @media (max-width: 860px) {
+        .announcement-long { display: none; }
+        .announcement-short { display: inline; }
+      }
+
       @media (max-width: 768px) {
         section { padding: 48px 16px; }
         h2 { font-size: 1.6rem; }
         .grid-2, .grid-3 { grid-template-columns: 1fr; }
         .navbar { padding: 0 16px; }
+        .announcement-inner { padding: 0 16px; }
+      }
+
+      @media (max-width: 640px) {
+        .navbar-brand { font-size: 0.9rem; }
+        .nav-pill { font-size: 0.72rem; padding: 4px 8px; }
+        .navbar-actions { gap: 6px; }
+        .navbar-actions { justify-content: flex-start; }
+        .navbar-links { gap: 12px; }
+        .announcement-actions { flex-wrap: wrap; }
+        .hero-title { font-size: 2.2rem; }
+        .hero-subtitle { font-size: 1.05rem; margin-bottom: 24px; }
+        .hero-section { padding-top: calc(var(--announce-height) + var(--navbar-height) + 60px); }
+        .hero-install { width: 100%; justify-content: center; flex-wrap: wrap; }
+        .bench-header { display: none; }
+        .bench-row { grid-template-columns: 1fr 1fr; }
+        .bench-metric { grid-column: 1 / -1; }
+        .pipeline-step { align-items: flex-start; }
+        .pipeline-icon { width: 44px; height: 44px; font-size: 1rem; }
+        .pipeline-line { left: 22px; }
+        .pipeline-content { padding: 12px 14px; flex-wrap: wrap; }
+        .pipeline-num { width: auto; }
+        .sticky-install {
+          left: 12px;
+          right: 12px;
+          bottom: 12px;
+        }
+        .sticky-install a {
+          width: 100%;
+          justify-content: center;
+        }
       }
 
       .badge {

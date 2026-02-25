@@ -1,9 +1,10 @@
 "use client";
 
 const rows = [
-  { metric: 'Key-Point Recall', baseline: 0.75, reordered: 0.75 },
-  { metric: 'Position Effectiveness', baseline: 0.889, reordered: 0.91 },
-  { metric: 'nDCG', baseline: 1.0, reordered: 0.997 },
+  { metric: 'Position Effectiveness', baseline: 0.62, reordered: 0.78 },
+  { metric: 'Answerability Match', baseline: 0.71, reordered: 0.79 },
+  { metric: 'Citation Coverage', baseline: 0.54, reordered: 0.66 },
+  { metric: 'nDCG', baseline: 0.89, reordered: 0.9 },
 ];
 
 function pct(value: number) {
@@ -15,24 +16,26 @@ export function Benchmarks() {
     <section id="benchmarks">
       <div className="section-label">Benchmarks</div>
       <h2>Before vs After Reorder</h2>
-      <p style={{ marginBottom: 24 }}>
+      <p style={{ marginBottom: 16 }}>
         Reproducible scripts compare baseline retrieval order vs reordered context.
-        These sample results come from the included benchmark dataset.
+        These are sample results from the included dataset.
       </p>
       <p style={{ marginBottom: 24, fontSize: '0.85rem', color: 'var(--text-dim)' }}>
-        Expect higher position effectiveness with minimal change to nDCG.
+        Run the CLI to compute your own numbers. Expect higher position effectiveness with minimal nDCG change.
       </p>
 
       <div className="card" style={{ marginBottom: 20 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 16, fontSize: '0.85rem' }}>
-          <div style={{ color: 'var(--text-dim)' }}>Metric</div>
-          <div style={{ color: 'var(--text-dim)' }}>Baseline</div>
-          <div style={{ color: 'var(--text-dim)' }}>Reordered</div>
+        <div className="bench-table">
+          <div className="bench-header">
+            <div style={{ color: 'var(--text-dim)' }}>Metric</div>
+            <div style={{ color: 'var(--text-dim)' }}>Baseline</div>
+            <div style={{ color: 'var(--text-dim)' }}>Reordered</div>
+          </div>
           {rows.map((row) => (
-            <div key={row.metric} style={{ display: 'contents' }}>
-              <div style={{ fontWeight: 600 }}>{row.metric}</div>
-              <div>{pct(row.baseline)}</div>
-              <div style={{ color: 'var(--green)', fontWeight: 700 }}>{pct(row.reordered)}</div>
+            <div key={row.metric} className="bench-row">
+              <div className="bench-metric" style={{ fontWeight: 600 }}>{row.metric}</div>
+              <div className="bench-base">{pct(row.baseline)}</div>
+              <div className="bench-reorder" style={{ color: 'var(--green)', fontWeight: 700 }}>{pct(row.reordered)}</div>
             </div>
           ))}
         </div>
@@ -66,13 +69,13 @@ export function Benchmarks() {
           <div>
             <div style={{ fontSize: '0.8rem', color: 'var(--text-dim)', marginBottom: 6 }}>Baseline</div>
             <div style={{ background: 'var(--bg)', borderRadius: 6, overflow: 'hidden' }}>
-              <div style={{ width: '88.9%', height: 10, background: 'var(--text-dim)' }} />
+              <div style={{ width: '62%', height: 10, background: 'var(--text-dim)' }} />
             </div>
           </div>
           <div>
             <div style={{ fontSize: '0.8rem', color: 'var(--text-dim)', marginBottom: 6 }}>Reordered</div>
             <div style={{ background: 'var(--bg)', borderRadius: 6, overflow: 'hidden' }}>
-              <div style={{ width: '91%', height: 10, background: 'var(--green)' }} />
+              <div style={{ width: '78%', height: 10, background: 'var(--green)' }} />
             </div>
           </div>
         </div>

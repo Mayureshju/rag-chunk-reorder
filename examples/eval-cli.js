@@ -25,7 +25,9 @@ Options:
   --endCount <int>
   --topK <int>
   --maxTokens <int>
+  --maxChars <int>
   --minScore <number>
+  --minTopK <int>
   --deduplicate true|false
   --deduplicateThreshold <0-1>
   --packing auto|prefix|edgeAware
@@ -33,6 +35,8 @@ Options:
   --tokenCounter words|chars (default: words)
   --recallK <int>
   --ciSamples <int> (default: 500)
+  --seed <int> (reproducible CI sampling)
+  --report <path/to/eval-report.md>
   --config <path/to/config.json>
 `;
 
@@ -97,14 +101,22 @@ function percentile(sorted, p) {
   return sorted[idx];
 }
 
-function bootstrapCI(values, samples) {
+function createRng(seed) {
+  let state = seed >>> 0;
+  return () => {
+    state = (state * 1664525 + 1013904223) >>> 0;
+    return state / 0x100000000;
+  };
+}
+
+function bootstrapCI(values, samples, rng) {
   if (values.length === 0) return undefined;
   const n = values.length;
   const draws = [];
   for (let i = 0; i < samples; i++) {
     let sum = 0;
     for (let j = 0; j < n; j++) {
-      const idx = Math.floor(Math.random() * n);
+      const idx = Math.floor(rng() * n);
       sum += values[idx];
     }
     draws.push(sum / n);
@@ -124,14 +136,14 @@ function formatValueWithCI(value, ci) {
   return `${value.toFixed(4)} [${ci.lower.toFixed(4)}, ${ci.upper.toFixed(4)}]`;
 }
 
-function formatMetricWithCI(label, baseValues, reorderValues, ciSamples) {
+function formatMetricWithCI(label, baseValues, reorderValues, ciSamples, rng) {
   if (baseValues.length === 0 || reorderValues.length === 0) {
     return `${label}: n/a`;
   }
   const baseMean = mean(baseValues);
   const reorderMean = mean(reorderValues);
-  const baseCI = bootstrapCI(baseValues, ciSamples);
-  const reorderCI = bootstrapCI(reorderValues, ciSamples);
+  const baseCI = bootstrapCI(baseValues, ciSamples, rng);
+  const reorderCI = bootstrapCI(reorderValues, ciSamples, rng);
   const delta = reorderMean - baseMean;
   const deltaStr = delta >= 0 ? `+${delta.toFixed(4)}` : delta.toFixed(4);
   return `${label}: ${formatValueWithCI(baseMean, baseCI)} -> ${formatValueWithCI(reorderMean, reorderCI)} (${deltaStr})`;
@@ -154,6 +166,19 @@ function applyTokenBudgetPrefix(chunks, maxTokens, tokenCounter) {
   return result;
 }
 
+function applyCharBudgetPrefix(chunks, maxChars) {
+  if (maxChars === undefined) return [...chunks];
+  const result = [];
+  let total = 0;
+  for (const chunk of chunks) {
+    const chars = chunk.text.length;
+    if (total + chars > maxChars) break;
+    total += chars;
+    result.push(chunk);
+  }
+  return result;
+}
+
 function applyBaselinePipeline(chunks, config, helpers) {
   const { prepareChunks, deduplicateChunks } = helpers;
   let working = prepareChunks(chunks, config.validationMode);
@@ -166,7 +191,14 @@ function applyBaselinePipeline(chunks, config, helpers) {
       keep: config.deduplicateKeep,
     });
   }
-  working = applyTokenBudgetPrefix(working, config.maxTokens, config.tokenCounter);
+  if (config.maxTokens !== undefined && config.tokenCounter) {
+    working = applyTokenBudgetPrefix(working, config.maxTokens, config.tokenCounter);
+  } else if (config.maxChars !== undefined) {
+    working = applyCharBudgetPrefix(working, config.maxChars);
+  }
+  if (config.minTopK !== undefined && working.length < config.minTopK) {
+    working = working.slice(0, config.minTopK);
+  }
   if (config.topK !== undefined && working.length > config.topK) {
     working = working.slice(0, config.topK);
   }
@@ -210,6 +242,17 @@ function formatMetric(label, baseValue, reorderValue) {
   const delta = reorderValue - baseValue;
   const deltaStr = delta >= 0 ? `+${delta.toFixed(4)}` : delta.toFixed(4);
   return `${label}: ${baseValue.toFixed(4)} -> ${reorderValue.toFixed(4)} (${deltaStr})`;
+}
+
+function formatReportRow(label, baseValues, reorderValues) {
+  if (baseValues.length === 0 || reorderValues.length === 0) {
+    return `| ${label} | n/a | n/a | n/a |`;
+  }
+  const baseMean = mean(baseValues);
+  const reorderMean = mean(reorderValues);
+  const delta = reorderMean - baseMean;
+  const deltaStr = delta >= 0 ? `+${delta.toFixed(4)}` : delta.toFixed(4);
+  return `| ${label} | ${baseMean.toFixed(4)} | ${reorderMean.toFixed(4)} | ${deltaStr} |`;
 }
 
 async function main() {
@@ -256,7 +299,9 @@ async function main() {
     endCount: toNumber(args.endCount) ?? baseConfig.endCount,
     topK: toNumber(args.topK) ?? baseConfig.topK,
     maxTokens: toNumber(args.maxTokens) ?? baseConfig.maxTokens,
+    maxChars: toNumber(args.maxChars) ?? baseConfig.maxChars,
     minScore: toNumber(args.minScore) ?? baseConfig.minScore,
+    minTopK: toNumber(args.minTopK) ?? baseConfig.minTopK,
     deduplicate: toBoolean(args.deduplicate) ?? baseConfig.deduplicate,
     deduplicateThreshold:
       toNumber(args.deduplicateThreshold) ?? baseConfig.deduplicateThreshold,
@@ -272,6 +317,9 @@ async function main() {
   const merged = reorderer.getConfig();
   const recallK = toNumber(args.recallK);
   const ciSamples = toNumber(args.ciSamples) ?? 500;
+  const seed = toNumber(args.seed);
+  const reportPath = args.report === true ? 'eval-report.md' : args.report;
+  const rng = seed !== undefined ? createRng(seed) : () => Math.random();
 
   const data = fs.readFileSync(path.resolve(inputPath), 'utf8');
   const lines = data.split(/\r?\n/).filter((line) => line.trim().length > 0);
@@ -368,20 +416,22 @@ async function main() {
   console.log('');
 
   console.log('Ranking metrics');
-  console.log(formatMetricWithCI('nDCG', baselineNdcg, reorderNdcg, ciSamples));
-  console.log(formatMetricWithCI('PositionEffectiveness', baselinePosEff, reorderPosEff, ciSamples));
+  console.log(formatMetricWithCI('nDCG', baselineNdcg, reorderNdcg, ciSamples, rng));
+  console.log(
+    formatMetricWithCI('PositionEffectiveness', baselinePosEff, reorderPosEff, ciSamples, rng),
+  );
 
   if (baselineRecall.length > 0 || reorderRecall.length > 0) {
     console.log('');
     const label = recallK ? `Recall@${recallK}` : 'Recall@k';
     console.log('Retrieval metrics');
-    console.log(formatMetricWithCI(label, baselineRecall, reorderRecall, ciSamples));
+    console.log(formatMetricWithCI(label, baselineRecall, reorderRecall, ciSamples, rng));
   }
 
   if (baselineSpanRecall.length > 0 || reorderSpanRecall.length > 0) {
     console.log('');
     console.log('Span metrics');
-    console.log(formatMetricWithCI('SpanRecall', baselineSpanRecall, reorderSpanRecall, ciSamples));
+    console.log(formatMetricWithCI('SpanRecall', baselineSpanRecall, reorderSpanRecall, ciSamples, rng));
   }
 
   if (baselineAnswerSummary && reorderAnswerSummary) {
@@ -418,15 +468,17 @@ async function main() {
         baselineEm,
         reorderEm,
         ciSamples,
+        rng,
       ),
     );
-    console.log(formatMetricWithCI('TokenF1', baselineF1, reorderF1, ciSamples));
+    console.log(formatMetricWithCI('TokenF1', baselineF1, reorderF1, ciSamples, rng));
     console.log(
       formatMetricWithCI(
         'Answerability',
         baselineAnswerability,
         reorderAnswerability,
         ciSamples,
+        rng,
       ),
     );
     console.log(
@@ -435,6 +487,7 @@ async function main() {
         baselineCitation,
         reorderCitation,
         ciSamples,
+        rng,
       ),
     );
     console.log(
@@ -443,11 +496,85 @@ async function main() {
         baselineFaith,
         reorderFaith,
         ciSamples,
+        rng,
       ),
     );
   } else {
     console.log('');
     console.log('Answer metrics: n/a (prediction/references missing)');
+  }
+
+  if (reportPath) {
+    const lines = [];
+    lines.push('# Eval Report');
+    lines.push('');
+    lines.push(`Cases processed: ${total}`);
+    lines.push(`Cases skipped: ${skipped}`);
+    if (seed !== undefined) {
+      lines.push(`Seed: ${seed}`);
+    }
+    lines.push('');
+    lines.push('## Ranking metrics');
+    lines.push('| Metric | Baseline | Reorder | Delta |');
+    lines.push('| --- | --- | --- | --- |');
+    lines.push(formatReportRow('nDCG', baselineNdcg, reorderNdcg));
+    lines.push(formatReportRow('PositionEffectiveness', baselinePosEff, reorderPosEff));
+
+    if (baselineRecall.length > 0 || reorderRecall.length > 0) {
+      lines.push('');
+      lines.push('## Retrieval metrics');
+      lines.push('| Metric | Baseline | Reorder | Delta |');
+      lines.push('| --- | --- | --- | --- |');
+      const label = recallK ? `Recall@${recallK}` : 'Recall@k';
+      lines.push(formatReportRow(label, baselineRecall, reorderRecall));
+    }
+
+    if (baselineSpanRecall.length > 0 || reorderSpanRecall.length > 0) {
+      lines.push('');
+      lines.push('## Span metrics');
+      lines.push('| Metric | Baseline | Reorder | Delta |');
+      lines.push('| --- | --- | --- | --- |');
+      lines.push(formatReportRow('SpanRecall', baselineSpanRecall, reorderSpanRecall));
+    }
+
+    if (baselineAnswerSummary && reorderAnswerSummary) {
+      const baselinePer = baselineAnswerSummary.perExample ?? [];
+      const reorderPer = reorderAnswerSummary.perExample ?? [];
+      const baselineEm = baselinePer.map((p) => p.exactMatch);
+      const reorderEm = reorderPer.map((p) => p.exactMatch);
+      const baselineF1 = baselinePer.map((p) => p.f1);
+      const reorderF1 = reorderPer.map((p) => p.f1);
+      const baselineAnswerability = baselinePer
+        .map((p) => p.answerability)
+        .filter((v) => typeof v === 'number');
+      const reorderAnswerability = reorderPer
+        .map((p) => p.answerability)
+        .filter((v) => typeof v === 'number');
+      const baselineCitation = baselinePer
+        .map((p) => p.citationCoverage)
+        .filter((v) => typeof v === 'number');
+      const reorderCitation = reorderPer
+        .map((p) => p.citationCoverage)
+        .filter((v) => typeof v === 'number');
+      const baselineFaith = baselinePer
+        .map((p) => p.faithfulness)
+        .filter((v) => typeof v === 'number');
+      const reorderFaith = reorderPer
+        .map((p) => p.faithfulness)
+        .filter((v) => typeof v === 'number');
+
+      lines.push('');
+      lines.push('## Answer metrics');
+      lines.push('| Metric | Baseline | Reorder | Delta |');
+      lines.push('| --- | --- | --- | --- |');
+      lines.push(formatReportRow('ExactMatch', baselineEm, reorderEm));
+      lines.push(formatReportRow('TokenF1', baselineF1, reorderF1));
+      lines.push(formatReportRow('Answerability', baselineAnswerability, reorderAnswerability));
+      lines.push(formatReportRow('CitationCoverage', baselineCitation, reorderCitation));
+      lines.push(formatReportRow('Faithfulness', baselineFaith, reorderFaith));
+    }
+
+    fs.writeFileSync(path.resolve(String(reportPath)), lines.join('\\n'), 'utf8');
   }
 }
 

@@ -16,6 +16,7 @@ export type {
   CoercionStats,
   AbortSignalLike,
   Reranker,
+  RerankerResult,
 } from './types';
 
 // Core
@@ -26,7 +27,7 @@ export type { MergedReorderConfig } from './config';
 export { validateChunks, prepareChunks } from './validator';
 
 // Deduplication
-export { deduplicateChunks, trigramSimilarity } from './deduplicator';
+export { deduplicateChunks, deduplicateChunksUnsafe, trigramSimilarity } from './deduplicator';
 export type { DeduplicateOptions } from './deduplicator';
 
 // Serialization

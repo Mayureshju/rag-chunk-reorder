@@ -8,51 +8,50 @@ deduplicateThreshold: 0.85,
 deduplicateKeep: 'highestScore'`,
     },
     {
-      icon: '🎯', title: 'Min Score Filter',
-      desc: 'Drop low-relevance chunks before reordering. Prevents noise from diluting your context window.',
-      code: `minScore: 0.5`,
-    },
-    {
-      icon: '📏', title: 'Token Budget',
-      desc: 'Trim output to fit your LLM context window. Requires a token counter function.',
+      icon: '📏', title: 'Budgeting + Fallbacks',
+      desc: 'Trim output to fit your context window with token counting or maxChars fallback.',
       code: `maxTokens: 4096,
-tokenCounter: (text) =>
-  text.split(/\\s+/).length`,
+tokenCounter: (text) => text.split(/\\s+/).length,
+maxChars: 20000,
+minTopK: 4`,
     },
     {
-      icon: '🔝', title: 'Top-K Limit',
-      desc: 'Cap the number of output chunks after reordering and token budget are applied.',
-      code: `topK: 10`,
-    },
-    {
-      icon: '📦', title: 'Grouping',
-      desc: 'Partition chunks by any metadata field before applying the strategy to each group independently.',
-      code: `groupBy: 'sourceId'`,
-    },
-    {
-      icon: '🤖', title: 'Reranker Integration',
-      desc: 'Plug in a cross-encoder reranker to refine scores before reordering. Async only, with graceful fallback.',
+      icon: '🤖', title: 'Reranker Batching',
+      desc: 'Plug in a cross-encoder and control batch size, concurrency, and timeouts.',
       code: `reranker: myCrossEncoder,
-onRerankerError: (e) =>
-  console.warn(e)`,
+rerankerBatchSize: 16,
+rerankerConcurrency: 4,
+rerankerTimeoutMs: 2000`,
     },
     {
-      icon: '🌊', title: 'Streaming',
-      desc: 'Yield chunks one at a time via async iterator. Compatible with streaming LLM pipelines.',
-      code: `for await (const chunk of
-  reorderer.reorderStream(chunks, q)) {
-  process.stdout.write(chunk.text);
+      icon: '🧭', title: 'Auto Strategy',
+      desc: 'Route to the right strategy based on query intent and metadata coverage.',
+      code: `strategy: 'auto',
+autoStrategy: {
+  temporalTimestampCoverageThreshold: 0.4,
 }`,
     },
     {
-      icon: '💾', title: 'Serialization',
-      desc: 'Round-trip serialize/deserialize chunks to JSON. Perfect for caching and persistence.',
-      code: `const json = serializeChunks(chunks);
-const restored = deserializeChunks(json);`,
+      icon: '📈', title: 'Diagnostics + Trace',
+      desc: 'Structured per-call stats and step timings for production tuning.',
+      code: `onDiagnostics: (stats) => console.log(stats),
+onTraceStep: (step, ms) =>
+  console.log(step, ms)`,
+    },
+    {
+      icon: '🎚️', title: 'Score Clamp',
+      desc: 'Clamp scores to a safe range to prevent outliers from dominating.',
+      code: `scoreClamp: [0, 1]`,
+    },
+    {
+      icon: '🔀', title: 'Grouping + Top-K',
+      desc: 'Partition by metadata fields and cap output after reordering.',
+      code: `groupBy: 'sourceId',
+topK: 10`,
     },
     {
       icon: '📊', title: 'Evaluation Metrics',
-      desc: 'Built-in keyPointRecall, keyPointPrecision, positionEffectiveness, and nDCG for measuring quality.',
+      desc: 'Built-in answer-level and ranking metrics for offline evaluations.',
       code: `keyPointRecall(keyPoints, texts)
 positionEffectiveness(scored)
 ndcg(scores)`,

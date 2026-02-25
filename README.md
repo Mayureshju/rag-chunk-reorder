@@ -298,6 +298,10 @@ const reorderer = new Reorderer({
   maxTokens: 4096, // max total tokens in output
   tokenCounter: (text) => text.split(/\s+/).length, // required when maxTokens is set
   // If chunk.tokenCount or metadata.tokenCount is present, it is used instead of tokenCounter
+  maxChars: 20000, // fallback character budget when tokenCounter is unavailable
+  charCounter: (text) => text.length, // optional character counter for maxChars
+  minTopK: 4, // guarantee at least this many chunks even if budget is tight
+  scoreClamp: [0, 1], // optional clamp for chunk scores
 
   // Deduplication
   deduplicate: true, // remove duplicate chunks
@@ -320,6 +324,8 @@ const reorderer = new Reorderer({
   onRerankerError: (err) => console.warn('Reranker failed:', err),
   rerankerTimeoutMs: 2000, // optional timeout for reranker
   rerankerAbortSignal: myAbortSignal, // optional AbortSignal
+  rerankerConcurrency: 4, // optional concurrent reranker calls
+  rerankerBatchSize: 16, // optional batch size for reranker
 
   // Budget packing policy for maxTokens/topK
   packing: 'auto', // 'auto' | 'prefix' | 'edgeAware'
@@ -329,6 +335,10 @@ const reorderer = new Reorderer({
 
   // Diagnostics hook
   onDiagnostics: (stats) => console.log('reorder diagnostics', stats),
+  onTraceStep: (step, ms, details) => console.log(step, ms, details),
+  validateRerankerOutputLength: true, // ensure reranker output length matches input
+  validateRerankerOutputOrder: true, // ensure reranker preserves input order (unique ids)
+  validateRerankerOutputOrderByIndex: false, // strict index order check using id+text
 
   // Debug
   includePriorityScore: true, // include computed priorityScore in output metadata
@@ -345,6 +355,11 @@ const reorderer = new Reorderer({
 | `minScore`             | `number`                                                                | `undefined`     | Minimum relevance score threshold                            |
 | `topK`                 | `number`                                                                | `undefined`     | Maximum number of chunks to return                           |
 | `maxTokens`            | `number`                                                                | `undefined`     | Maximum token budget for output                              |
+| `maxChars`             | `number`                                                                | `undefined`     | Maximum character budget (fallback without tokenCounter)     |
+| `charCounter`          | `(text) => number`                                                      | `undefined`     | Optional character counter for maxChars                      |
+| `minTopK`              | `number`                                                                | `undefined`     | Minimum chunks returned even if budgets are tight            |
+| `tokenCounter`         | `(text) => number`                                                      | `undefined`     | Token counter required for maxTokens                         |
+| `scoreClamp`           | `[number, number]`                                                      | `undefined`     | Clamp chunk scores to a safe range                            |
 | `packing`              | `'auto'` \| `'prefix'` \| `'edgeAware'`                                 | `'auto'`        | How token/topK budgets are packed                            |
 | `deduplicate`          | `boolean`                                                               | `false`         | Whether to remove duplicates                                 |
 | `deduplicateThreshold` | `number`                                                                | `1.0`           | Similarity threshold for fuzzy dedup (0-1)                   |
@@ -361,11 +376,32 @@ const reorderer = new Reorderer({
 | `autoStrategy.narrativeSectionCoverageThreshold`  | `number` (0-1)                                        | `0.3`           | Section coverage needed for narrative auto-routing           |
 | `validationMode`     | `'strict'` \| `'coerce'`                                         | `'strict'`     | Input validation behavior                                    |
 | `onDiagnostics`      | `(stats) => void`                                                 | `undefined`    | Structured pipeline stats per reorder call                   |
+| `onTraceStep`        | `(step, ms, details?) => void`                                   | `undefined`    | Per-step timing hook                                         |
+| `validateRerankerOutputLength` | `boolean`                                                | `true`         | Verify reranker output length matches input                  |
+| `validateRerankerOutputOrder`  | `boolean`                                                | `true`         | Verify reranker output order matches input (unique ids)      |
+| `validateRerankerOutputOrderByIndex` | `boolean`                                           | `false`        | Strict index order check using id+text                       |
 | `includePriorityScore` | `boolean`                                                               | `false`         | Include computed priority in output metadata                 |
 | `rerankerTimeoutMs`    | `number`                                                                | `undefined`     | Reranker timeout in milliseconds                             |
 | `rerankerAbortSignal`  | `AbortSignal`                                                           | `undefined`     | Abort signal forwarded to reranker                           |
+| `rerankerConcurrency`  | `number`                                                                | `undefined`     | Max concurrent reranker calls                                |
+| `rerankerBatchSize`    | `number`                                                                | `undefined`     | Batch size per reranker call                                 |
 
 ---
+
+Diagnostics payloads include counts for `dedupStrategyUsed`, `packingStrategyUsed`, `tokenCountUsed`,
+`cachedTokenCountUsed`, `charCountUsed`, and `budgetUnit` to aid production monitoring.
+When `maxChars` is used, `budgetUnit` is `chars` and `tokenCountUsed` is `0`.
+
+For non-ASCII text, consider providing `charCounter`. Example:
+
+```ts
+const reorderer = new Reorderer({
+  maxChars: 4000,
+  charCounter: (text) => Array.from(text).length,
+});
+```
+
+For full grapheme support (emoji/combined characters), use a grapheme splitter and supply that count.
 
 ## Advanced Usage
 
@@ -408,7 +444,10 @@ const reranker: Reranker = {
   async rerank(chunks, query) {
     // Call your cross-encoder model here
     const reranked = await myCrossEncoder.rerank(chunks, query);
-    return reranked.map((c, i) => ({ ...c, score: reranked[i].score }));
+    return {
+      chunks,
+      scores: reranked.map((c) => c.score),
+    };
   },
 };
 
@@ -421,6 +460,13 @@ const result = await reorderer.reorder(chunks, 'What is the capital of France?')
 ```
 
 If the reranker throws, the library falls back to original scores and calls `onRerankerError`.
+`validateRerankerOutputOrder` only enforces order when input ids are unique. With identical duplicates
+(`id` + `text` collisions), order checks are best-effort. Prefer unique ids or include a stable
+`metadata.chunkId` when using rerankers that may reorder inputs. For strict index checks, use
+`validateRerankerOutputOrderByIndex` (requires unique `metadata.chunkId` for duplicates).
+
+For cross-encoder APIs that benefit from batching, set `rerankerBatchSize` and `rerankerConcurrency` to control
+how many parallel calls are made.
 
 ### Diversity-Aware Reranking (MMR + Source Diversity)
 
@@ -469,6 +515,9 @@ const sim = trigramSimilarity('hello world foo', 'hello world bar'); // ~0.6
 ```
 
 Fuzzy dedup uses O(n²) pairwise comparison. For arrays > 500 chunks, consider exact dedup or pre-filtering.
+
+`deduplicateChunks` validates inputs in `strict` mode by default. If you need the previous permissive behavior,
+use `deduplicateChunksUnsafe` or pass `{ validationMode: 'coerce' }`.
 
 ### Serialization
 
@@ -544,6 +593,7 @@ class Reorderer {
 | `validateConfig(config)`                        | Validate configuration       |
 | `mergeConfig(config)`                           | Merge with defaults          |
 | `deduplicateChunks(chunks, options?)`           | Remove duplicates            |
+| `deduplicateChunksUnsafe(chunks, options?)`     | Remove duplicates (coerce)   |
 | `trigramSimilarity(a, b)`                       | Trigram Jaccard similarity   |
 | `serializeChunks(chunks)`                       | Serialize to JSON            |
 | `deserializeChunks(json)`                       | Deserialize from JSON        |
@@ -584,6 +634,7 @@ interface ChunkMetadata {
   timestamp?: number;
   page?: number;
   sectionIndex?: number;
+  chunkId?: string;
   sourceId?: string | number | boolean;
   sourceReliability?: number;
   tokenCount?: number;
@@ -591,8 +642,14 @@ interface ChunkMetadata {
 }
 
 interface Reranker {
-  rerank(chunks: Chunk[], query: string, options?: { signal?: AbortSignal }): Promise<Chunk[]>;
+  rerank(
+    chunks: Chunk[],
+    query: string,
+    options?: { signal?: AbortSignal },
+  ): Promise<RerankerResult>;
 }
+
+type RerankerResult = Chunk[] | { chunks: Chunk[]; scores: number[] };
 
 type Strategy = 'scoreSpread' | 'preserveOrder' | 'chronological' | 'custom' | 'auto';
 type QueryIntent = 'factoid' | 'narrative' | 'temporal';
@@ -653,7 +710,8 @@ const answerSummary = evaluateAnswerSet([
 ```
 
 For dataset-level before/after evaluations, see `examples/eval-cli.js` with a JSONL dataset
-like `examples/data/sample-eval.jsonl`.
+like `examples/data/sample-eval.jsonl`. Use `--report eval-report.md` to generate a markdown
+summary suitable for README updates.
 
 ---
 
@@ -670,8 +728,8 @@ The reordering pipeline processes chunks in this order:
 7. **Group** (optional) — partition by metadata field
 8. **Strategy** — apply reordering algorithm
 9. **Strip internals** — remove priorityScore/originalIndex
-10. **Token budget** — apply `packing` policy (`auto`/`prefix`/`edgeAware`)
-11. **topK** — apply `packing` policy (`auto`/`prefix`/`edgeAware`)
+10. **Budget** — apply `maxTokens` (or `maxChars` fallback) with `packing` policy
+11. **topK/minTopK** — enforce `topK` limit and `minTopK` minimum
 
 ---
 
@@ -740,11 +798,72 @@ See runnable integration examples:
 
 ## Recipes
 
-Drop-in recipes for popular stacks live in the `examples/` folder:
+Drop-in recipes for popular stacks live in `examples/`:
 
-- LangChain + Pinecone
-- LlamaIndex + Qdrant
-- OpenAI Responses API
+### LangChain + Pinecone
+
+```typescript
+import { Pinecone } from '@pinecone-database/pinecone';
+import { reorderLangChainDocuments } from 'rag-chunk-reorder';
+
+const pc = new Pinecone({ apiKey: process.env.PINECONE_API_KEY! });
+const index = pc.index('docs');
+const results = await index.query({ vector: embedding, topK: 20, includeMetadata: true });
+
+const documents = results.matches.map((m) => ({
+  id: m.id,
+  pageContent: m.metadata?.text ?? '',
+  metadata: { score: m.score, sourceId: m.metadata?.docId },
+}));
+
+const reordered = await reorderLangChainDocuments(documents, {
+  query,
+  config: { strategy: 'scoreSpread', topK: 8, startCount: 2, endCount: 2 },
+});
+```
+
+See [`examples/langchain-pinecone.ts`](examples/langchain-pinecone.ts).
+
+### LlamaIndex + Qdrant
+
+```typescript
+import { QdrantClient } from '@qdrant/js-client-rest';
+import { reorderLlamaIndexNodes } from 'rag-chunk-reorder';
+
+const qdrant = new QdrantClient({ url: process.env.QDRANT_URL! });
+const hits = await qdrant.search('docs', { vector: embedding, limit: 20 });
+
+const nodes = hits.map((hit) => ({
+  id_: hit.id?.toString(),
+  text: hit.payload?.text ?? '',
+  score: hit.score,
+  metadata: { timestamp: hit.payload?.timestamp, sourceId: hit.payload?.docId },
+}));
+
+const reordered = await reorderLlamaIndexNodes(nodes, {
+  query,
+  config: { strategy: 'auto', topK: 8 },
+});
+```
+
+See [`examples/llamaindex-qdrant.ts`](examples/llamaindex-qdrant.ts).
+
+### OpenAI Responses API
+
+```typescript
+import OpenAI from 'openai';
+import { Reorderer } from 'rag-chunk-reorder';
+
+const reorderer = new Reorderer({ strategy: 'scoreSpread', topK: 2, startCount: 1, endCount: 1 });
+const context = reorderer.reorderSync(chunks).map((c) => c.text).join('\\n\\n');
+
+const response = await client.responses.create({
+  model: 'gpt-4.1-mini',
+  input: `Answer using the context below:\\n\\n${context}\\n\\nQ: ${query}`,
+});
+```
+
+See [`examples/openai-responses.ts`](examples/openai-responses.ts).
 
 ---
 

@@ -99,6 +99,15 @@ export function deduplicateChunks(chunks: Chunk[], options?: DeduplicateOptions)
   return deduplicateFuzzy(working, threshold, keep);
 }
 
+/**
+ * Legacy permissive deduplication (coerce mode).
+ * Keeps backward-compatible behavior for callers that relied on non-strict inputs.
+ */
+export function deduplicateChunksUnsafe(chunks: Chunk[], options?: DeduplicateOptions): Chunk[] {
+  const validationMode = options?.validationMode ?? 'coerce';
+  return deduplicateChunks(chunks, { ...options, validationMode });
+}
+
 function deduplicateExact(chunks: Chunk[], keep: 'highestScore' | 'first' | 'last'): Chunk[] {
   const seen = new Map<string, { chunk: Chunk; index: number }>();
 

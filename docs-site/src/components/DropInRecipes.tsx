@@ -10,22 +10,44 @@ export function DropInRecipes() {
       <div className="grid-2">
         <div className="card">
           <h3>LangChain + Pinecone (15 lines)</h3>
-          <pre style={{ fontSize: '0.8rem' }}>{`import { reorderLangChainDocuments } from 'rag-chunk-reorder';
+          <pre style={{ fontSize: '0.8rem' }}>{`import { Pinecone } from '@pinecone-database/pinecone';
+import { reorderLangChainDocuments } from 'rag-chunk-reorder';
 
-const docs = await retriever.getRelevantDocuments(query);
-const reordered = await reorderLangChainDocuments(docs);
+const pc = new Pinecone({ apiKey: process.env.PINECONE_API_KEY! });
+const index = pc.index('docs');
 
-const answer = await llm.call(reordered.map(d => d.pageContent).join('\\n'));`}</pre>
+const results = await index.query({ vector, topK: 20, includeMetadata: true });
+const documents = results.matches.map((m) => ({
+  id: m.id,
+  pageContent: m.metadata?.text ?? '',
+  metadata: { score: m.score, sourceId: m.metadata?.docId },
+}));
+
+const reordered = await reorderLangChainDocuments(documents, {
+  query,
+  config: { strategy: 'scoreSpread', topK: 8, startCount: 2, endCount: 2 },
+});`}</pre>
           <a href="#recipes" style={{ fontSize: '0.85rem' }}>See full recipe →</a>
         </div>
         <div className="card">
           <h3>LlamaIndex + Qdrant (10 lines)</h3>
-          <pre style={{ fontSize: '0.8rem' }}>{`import { reorderLlamaIndexNodes } from 'rag-chunk-reorder';
+          <pre style={{ fontSize: '0.8rem' }}>{`import { QdrantClient } from '@qdrant/js-client-rest';
+import { reorderLlamaIndexNodes } from 'rag-chunk-reorder';
 
-const nodes = await retriever.retrieve({ query });
-const reordered = await reorderLlamaIndexNodes(nodes);
+const qdrant = new QdrantClient({ url: process.env.QDRANT_URL! });
+const hits = await qdrant.search('docs', { vector, limit: 20 });
 
-const answer = await llm.synthesize(reordered);`}</pre>
+const nodes = hits.map((hit) => ({
+  id_: hit.id?.toString(),
+  text: (hit.payload?.text as string) ?? '',
+  score: hit.score,
+  metadata: { timestamp: hit.payload?.timestamp, sourceId: hit.payload?.docId },
+}));
+
+const reordered = await reorderLlamaIndexNodes(nodes, {
+  query,
+  config: { strategy: 'auto', topK: 8 },
+});`}</pre>
           <a href="#recipes" style={{ fontSize: '0.85rem' }}>See full recipe →</a>
         </div>
       </div>

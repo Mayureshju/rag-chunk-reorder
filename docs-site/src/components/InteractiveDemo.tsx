@@ -139,7 +139,7 @@ export function InteractiveDemo() {
         </div>
       </div>
 
-      <div style={{ marginTop: 16, display: 'flex', gap: 16, fontSize: '0.78rem', color: 'var(--text-dim)' }}>
+      <div style={{ marginTop: 16, display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: '0.78rem', color: 'var(--text-dim)' }}>
         <span>🟢 High attention zone</span>
         <span>🟡 Medium attention</span>
         <span>🔴 Low attention (middle)</span>

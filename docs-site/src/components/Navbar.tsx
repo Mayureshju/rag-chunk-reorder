@@ -6,6 +6,7 @@ const links = [
   { id: 'strategies', label: 'Strategies' },
   { id: 'recipes', label: 'Recipes' },
   { id: 'drop-in-recipes', label: 'Drop-In' },
+  { id: 'used-by', label: 'Used By' },
   { id: 'pipeline', label: 'Pipeline' },
   { id: 'features', label: 'Features' },
   { id: 'benchmarks', label: 'Benchmarks' },
