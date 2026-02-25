@@ -230,6 +230,68 @@ describe('minScore/maxTokens NaN/Infinity rejection', () => {
       { numRuns: 100 },
     );
   });
+
+  it('should require tokenCounter when maxTokens is set without maxChars', () => {
+    expect(() => validateConfig({ maxTokens: 10 })).toThrow(ValidationError);
+  });
+
+  it('should allow maxTokens without tokenCounter when maxChars is set', () => {
+    expect(() => validateConfig({ maxTokens: 10, maxChars: 100 })).not.toThrow();
+  });
+});
+
+describe('maxChars validation', () => {
+  it('should reject negative maxChars', () => {
+    expect(() => validateConfig({ maxChars: -1 })).toThrow(ValidationError);
+  });
+
+  it('should reject non-integer maxChars', () => {
+    expect(() => validateConfig({ maxChars: 1.5 })).toThrow(ValidationError);
+  });
+
+  it('should accept integer maxChars', () => {
+    expect(() => validateConfig({ maxChars: 500 })).not.toThrow();
+  });
+
+  it('should reject non-function charCounter', () => {
+    expect(() => validateConfig({ maxChars: 10, charCounter: 123 as any })).toThrow(ValidationError);
+  });
+
+  it('should accept function charCounter', () => {
+    expect(() =>
+      validateConfig({ maxChars: 10, charCounter: (text: string) => text.length }),
+    ).not.toThrow();
+  });
+});
+
+describe('scoreClamp validation', () => {
+  it('should reject invalid scoreClamp values', () => {
+    expect(() => validateConfig({ scoreClamp: [1, 0] as any })).toThrow(ValidationError);
+    expect(() => validateConfig({ scoreClamp: [0, NaN] as any })).toThrow(ValidationError);
+    expect(() => validateConfig({ scoreClamp: [0] as any })).toThrow(ValidationError);
+  });
+
+  it('should accept valid scoreClamp values', () => {
+    expect(() => validateConfig({ scoreClamp: [0, 1] })).not.toThrow();
+  });
+});
+
+describe('minTopK validation', () => {
+  it('should reject non-integer minTopK', () => {
+    expect(() => validateConfig({ minTopK: 2.5 })).toThrow(ValidationError);
+  });
+
+  it('should reject minTopK less than 1', () => {
+    expect(() => validateConfig({ minTopK: 0 })).toThrow(ValidationError);
+  });
+
+  it('should reject minTopK greater than topK', () => {
+    expect(() => validateConfig({ minTopK: 5, topK: 3 })).toThrow(ValidationError);
+  });
+
+  it('should accept valid minTopK', () => {
+    expect(() => validateConfig({ minTopK: 2 })).not.toThrow();
+  });
 });
 
 // Feature: chunk-reordering-library — startCount/endCount integer validation
@@ -302,6 +364,32 @@ describe('reranker timeout validation', () => {
 
   it('should reject NaN rerankerTimeoutMs', () => {
     expect(() => validateConfig({ rerankerTimeoutMs: NaN })).toThrow(ValidationError);
+  });
+});
+
+describe('reranker batch/concurrency validation', () => {
+  it('should reject non-integer rerankerConcurrency', () => {
+    expect(() => validateConfig({ rerankerConcurrency: 1.2 })).toThrow(ValidationError);
+  });
+
+  it('should reject non-positive rerankerConcurrency', () => {
+    expect(() => validateConfig({ rerankerConcurrency: 0 })).toThrow(ValidationError);
+  });
+
+  it('should accept integer rerankerConcurrency', () => {
+    expect(() => validateConfig({ rerankerConcurrency: 2 })).not.toThrow();
+  });
+
+  it('should reject non-integer rerankerBatchSize', () => {
+    expect(() => validateConfig({ rerankerBatchSize: 2.2 })).toThrow(ValidationError);
+  });
+
+  it('should reject non-positive rerankerBatchSize', () => {
+    expect(() => validateConfig({ rerankerBatchSize: 0 })).toThrow(ValidationError);
+  });
+
+  it('should accept integer rerankerBatchSize', () => {
+    expect(() => validateConfig({ rerankerBatchSize: 8 })).not.toThrow();
   });
 });
 

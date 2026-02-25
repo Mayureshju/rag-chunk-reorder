@@ -181,6 +181,68 @@ describe('maxTokens token budget', () => {
     const chunks: Chunk[] = [{ id: 'a', text: 'A', score: 1 }];
     expect(() => reorderer.reorderSync(chunks)).toThrow(ValidationError);
   });
+
+  it('should apply maxChars when tokenCounter is not provided', () => {
+    const reorderer = new Reorderer({
+      strategy: 'chronological',
+      maxTokens: 10,
+      maxChars: 2,
+    });
+    const chunks: Chunk[] = [
+      { id: 'a', text: 'aa', score: 1 },
+      { id: 'b', text: 'bbb', score: 0.9 },
+    ];
+    const result = reorderer.reorderSync(chunks);
+    expect(result.map((c) => c.id)).toEqual(['a']);
+  });
+
+  it('should honor minTopK even when token budget is tight', () => {
+    const reorderer = new Reorderer({
+      strategy: 'scoreSpread',
+      maxTokens: 1,
+      tokenCounter: (text: string) => text.length,
+      minTopK: 2,
+      startCount: 1,
+      endCount: 1,
+    });
+    const chunks: Chunk[] = [
+      { id: 'a', text: 'A', score: 0.9 },
+      { id: 'b', text: 'B', score: 0.8 },
+      { id: 'c', text: 'C', score: 0.7 },
+    ];
+    const result = reorderer.reorderSync(chunks);
+    expect(result.length).toBe(2);
+  });
+});
+
+// Feature: chunk-reordering-library — scoreClamp
+// Validates: scores are clamped before minScore filtering
+describe('scoreClamp', () => {
+  it('should clamp scores before minScore filtering', () => {
+    const reorderer = new Reorderer({
+      scoreClamp: [0, 0.3],
+      minScore: 0.4,
+    });
+    const chunks: Chunk[] = [
+      { id: 'a', text: 'A', score: 0.9 },
+      { id: 'b', text: 'B', score: 0.2 },
+    ];
+    const result = reorderer.reorderSync(chunks);
+    expect(result.length).toBe(0);
+  });
+
+  it('should keep scores within clamp range', () => {
+    const reorderer = new Reorderer({ scoreClamp: [0, 1] });
+    const chunks: Chunk[] = [
+      { id: 'a', text: 'A', score: 2 },
+      { id: 'b', text: 'B', score: -1 },
+    ];
+    const result = reorderer.reorderSync(chunks);
+    for (const chunk of result) {
+      expect(chunk.score).toBeGreaterThanOrEqual(0);
+      expect(chunk.score).toBeLessThanOrEqual(1);
+    }
+  });
 });
 
 // Feature: chunk-reordering-library — deduplicate integration in pipeline

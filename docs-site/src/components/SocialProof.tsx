@@ -1,19 +1,19 @@
 "use client";
 
 const adopters = [
-  { name: 'Search & Docs Teams', desc: 'Keeping high-signal context at the edges.' },
+  { name: 'Search + Docs', desc: 'Place the most relevant passages at attention edges.' },
   { name: 'Support Assistants', desc: 'More grounded answers under tight budgets.' },
-  { name: 'Research Prototypes', desc: 'Fast iteration on ordering strategies.' },
+  { name: 'Research Copilots', desc: 'Evaluate ordering strategies with reproducible metrics.' },
 ];
 
 export function SocialProof() {
   return (
     <section id="social-proof">
       <div className="section-label">Proof</div>
-      <h2>Trusted by Builders</h2>
+      <h2>Built for Production RAG</h2>
       <p style={{ marginBottom: 28 }}>
-        Early adopters use rag-chunk-reorder to improve answer quality without
-        swapping their retriever.
+        Teams use rag-chunk-reorder to improve answer quality without swapping their retriever.
+        Share your benchmark wins to get featured.
       </p>
 
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>

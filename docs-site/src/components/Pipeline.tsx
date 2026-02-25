@@ -14,27 +14,27 @@ export function Pipeline() {
   ];
 
   return (
-    <section id="pipeline">
+    <section id="pipeline" className="pipeline">
       <div className="section-label">Architecture</div>
       <h2>Processing Pipeline</h2>
       <p style={{ marginBottom: 32 }}>
         Every call flows through a deterministic pipeline. Each step is optional and configurable.
       </p>
 
-      <div style={{ position: 'relative' }}>
+      <div className="pipeline-track" style={{ position: 'relative' }}>
         {/* Connector line */}
-        <div style={{
+        <div className="pipeline-line" style={{
           position: 'absolute', left: 28, top: 20, bottom: 20, width: 2,
           background: 'linear-gradient(to bottom, var(--accent), var(--border))',
         }} />
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div className="pipeline-steps" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {steps.map(s => (
-            <div key={s.num} style={{
+            <div key={s.num} className="pipeline-step" style={{
               display: 'flex', alignItems: 'center', gap: 16, position: 'relative',
             }}>
               {/* Step number circle */}
-              <div style={{
+              <div className="pipeline-icon" style={{
                 width: 56, height: 56, borderRadius: '50%', flexShrink: 0,
                 background: 'var(--bg-card)', border: `2px solid ${s.color}`,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -44,12 +44,12 @@ export function Pipeline() {
               </div>
 
               {/* Step content */}
-              <div style={{
+              <div className="pipeline-content" style={{
                 flex: 1, padding: '14px 18px', borderRadius: 'var(--radius)',
                 background: 'var(--bg-card)', border: '1px solid var(--border)',
                 display: 'flex', alignItems: 'center', gap: 12,
               }}>
-                <span style={{
+                <span className="pipeline-num" style={{
                   fontFamily: 'var(--mono)', fontSize: '0.75rem', color: s.color,
                   fontWeight: 700, width: 20,
                 }}>{s.num}</span>

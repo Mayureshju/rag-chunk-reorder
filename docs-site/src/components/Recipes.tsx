@@ -3,6 +3,9 @@
 const recipes = [
   {
     title: 'LangChain + Pinecone',
+    icon: '🔗',
+    badge: 'Popular',
+    badgeColor: 'green',
     desc: 'Reorder Pinecone results before they hit the LLM. Works with Document[] or [Document, score][].',
     code: `import { Pinecone } from '@pinecone-database/pinecone';
 import { reorderLangChainDocuments } from 'rag-chunk-reorder';
@@ -29,6 +32,9 @@ const reordered = await reorderLangChainDocuments(documents, {
   },
   {
     title: 'LlamaIndex + Qdrant',
+    icon: '🦙',
+    badge: 'Fast',
+    badgeColor: 'blue',
     desc: 'Use Qdrant for retrieval, then apply chronological or preserveOrder based on query intent.',
     code: `import { QdrantClient } from '@qdrant/js-client-rest';
 import { reorderLlamaIndexNodes } from 'rag-chunk-reorder';
@@ -50,6 +56,9 @@ const reordered = await reorderLlamaIndexNodes(nodes, {
   },
   {
     title: 'OpenAI Responses API',
+    icon: '🤖',
+    badge: 'New',
+    badgeColor: 'purple',
     desc: 'Drop reordered context directly into the Responses API for tighter, more grounded answers.',
     code: `import OpenAI from 'openai';
 import { Reorderer } from 'rag-chunk-reorder';
@@ -69,19 +78,41 @@ const response = await client.responses.create({
 
 export function Recipes() {
   return (
-    <section id="recipes">
+    <section id="recipes" className="recipes-section">
       <div className="section-label">Recipes</div>
       <h2>Drop-In Integrations</h2>
-      <p style={{ marginBottom: 32 }}>
+      <p style={{ marginBottom: 16 }}>
         Copy-paste ready recipes for popular stacks. Each example keeps your
         existing retriever and only changes ordering.
       </p>
-      <div className="grid-3">
+      <div className="recipes-features">
+        <span className="recipe-feature">✓ Zero config</span>
+        <span className="recipe-feature">✓ Type-safe</span>
+        <span className="recipe-feature">✓ Framework agnostic</span>
+      </div>
+      <div className="recipes-grid">
         {recipes.map((recipe) => (
-          <div key={recipe.title} className="card">
-            <h3>{recipe.title}</h3>
-            <p style={{ fontSize: '0.9rem', marginBottom: 12 }}>{recipe.desc}</p>
-            <pre style={{ fontSize: '0.75rem' }}>{recipe.code}</pre>
+          <div key={recipe.title} className="recipe-card">
+            <div className="recipe-header">
+              <span className="recipe-icon">{recipe.icon}</span>
+              <div className="recipe-title-row">
+                <h3>{recipe.title}</h3>
+                <span className={`badge badge-${recipe.badgeColor}`}>{recipe.badge}</span>
+              </div>
+            </div>
+            <p className="recipe-desc">{recipe.desc}</p>
+            <div className="recipe-code-wrapper">
+              <pre className="recipe-code">{recipe.code}</pre>
+            </div>
+            <div className="recipe-footer">
+              <span className="recipe-lines">{recipe.code.split('\n').length} lines</span>
+              <button 
+                className="recipe-copy-btn"
+                onClick={() => navigator.clipboard.writeText(recipe.code)}
+              >
+                Copy code
+              </button>
+            </div>
           </div>
         ))}
       </div>

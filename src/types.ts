@@ -6,6 +6,8 @@ export interface ChunkMetadata {
   page?: number;
   /** Position/index within the source document */
   sectionIndex?: number;
+  /** Optional stable identifier for strict reranker order checks */
+  chunkId?: string;
   /** Identifier of the source document */
   sourceId?: string | number | boolean;
   /** Optional source reliability score (0–1 recommended) */
@@ -111,6 +113,10 @@ export interface ReorderConfig {
   groupBy?: string;
   /** External reranker to refine scores before reordering */
   reranker?: Reranker;
+  /** Max number of concurrent reranker calls (batching). */
+  rerankerConcurrency?: number;
+  /** Batch size for reranker calls (batching). */
+  rerankerBatchSize?: number;
   /** Abort signal for reranker (optional). */
   rerankerAbortSignal?: AbortSignalLike;
   /** Timeout for reranker in milliseconds (optional). */
@@ -121,10 +127,24 @@ export interface ReorderConfig {
   minScore?: number;
   /** Maximum number of tokens in the output context window */
   maxTokens?: number;
+  /** Maximum number of characters in the output context window */
+  maxChars?: number;
+  /** Optional character counter for maxChars budgeting (defaults to text.length) */
+  charCounter?: (text: string) => number;
   /** Function to count tokens in a chunk's text. Required when maxTokens is set. */
   tokenCounter?: (text: string) => number;
+  /** Optional clamp for chunk scores: [min, max] */
+  scoreClamp?: [number, number];
+  /** Minimum number of chunks to return even if budgets are tight. */
+  minTopK?: number;
   /** Called when the reranker fails. Defaults to no-op. */
   onRerankerError?: (error: unknown) => void;
+  /** Validate reranker output length matches input (default: true). */
+  validateRerankerOutputLength?: boolean;
+  /** Validate reranker output preserves input order when ids are unique (default: true). */
+  validateRerankerOutputOrder?: boolean;
+  /** Strict index-based reranker order validation using id+text (default: false). */
+  validateRerankerOutputOrderByIndex?: boolean;
   /** If true, include priorityScore in output chunk metadata */
   includePriorityScore?: boolean;
   /** Enable deduplication before reordering. When true, exact duplicates are removed. */
@@ -145,6 +165,8 @@ export interface ReorderConfig {
   validationMode?: ValidationMode;
   /** Structured diagnostics emitted per reorder call. */
   onDiagnostics?: (stats: ReorderDiagnostics) => void;
+  /** Optional per-step timing hook (ms). */
+  onTraceStep?: (step: TraceStep, ms: number, details?: Record<string, unknown>) => void;
 }
 
 /** Diagnostics emitted per reorder call. */
@@ -157,6 +179,12 @@ export interface ReorderDiagnostics {
   droppedMetadataSectionIndex: number;
   droppedMetadataSourceId: number;
   droppedMetadataSourceReliability: number;
+  dedupStrategyUsed: 'none' | 'exact' | 'fuzzy';
+  packingStrategyUsed: 'prefix' | 'edgeAware';
+  tokenCountUsed: number;
+  cachedTokenCountUsed: number;
+  charCountUsed: number;
+  budgetUnit: 'none' | 'tokens' | 'chars';
   filteredByMinScore: number;
   dedupRemoved: number;
   rerankerApplied: boolean;
@@ -172,7 +200,7 @@ export interface Reranker {
     chunks: Chunk[],
     query: string,
     options?: { signal?: AbortSignalLike },
-  ): Promise<Chunk[]>;
+  ): Promise<RerankerResult>;
 }
 
 /** Coercion counters used in diagnostics. */
@@ -184,3 +212,15 @@ export interface CoercionStats {
   droppedMetadataSourceId: number;
   droppedMetadataSourceReliability: number;
 }
+
+export type TraceStep =
+  | 'minScore'
+  | 'dedup'
+  | 'score'
+  | 'strategy'
+  | 'budget'
+  | 'reranker';
+
+export type RerankerResult =
+  | Chunk[]
+  | { chunks: Chunk[]; scores: number[] };

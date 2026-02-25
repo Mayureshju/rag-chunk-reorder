@@ -117,7 +117,9 @@ export function validateConfig(config: ReorderConfig): void {
   }
 
   if (config.maxTokens !== undefined && typeof config.tokenCounter !== 'function') {
-    throw new ValidationError('maxTokens requires a tokenCounter function');
+    if (config.maxChars === undefined) {
+      throw new ValidationError('maxTokens requires a tokenCounter function or maxChars fallback');
+    }
   }
 
   if (config.maxTokens !== undefined) {
@@ -126,9 +128,49 @@ export function validateConfig(config: ReorderConfig): void {
     }
   }
 
+  if (config.maxChars !== undefined) {
+    if (
+      typeof config.maxChars !== 'number' ||
+      !Number.isFinite(config.maxChars) ||
+      config.maxChars < 0 ||
+      !Number.isInteger(config.maxChars)
+    ) {
+      throw new ValidationError('maxChars must be a non-negative integer');
+    }
+  }
+
+  if (config.charCounter !== undefined && typeof config.charCounter !== 'function') {
+    throw new ValidationError('charCounter must be a function');
+  }
+
+  if (config.scoreClamp !== undefined) {
+    if (
+      !Array.isArray(config.scoreClamp) ||
+      config.scoreClamp.length !== 2 ||
+      typeof config.scoreClamp[0] !== 'number' ||
+      typeof config.scoreClamp[1] !== 'number' ||
+      !Number.isFinite(config.scoreClamp[0]) ||
+      !Number.isFinite(config.scoreClamp[1]) ||
+      config.scoreClamp[0] > config.scoreClamp[1]
+    ) {
+      throw new ValidationError('scoreClamp must be a [min, max] array of finite numbers');
+    }
+  }
+
   if (config.minScore !== undefined) {
     if (typeof config.minScore !== 'number' || !Number.isFinite(config.minScore)) {
       throw new ValidationError('minScore must be a finite number');
+    }
+  }
+
+  if (config.minTopK !== undefined) {
+    if (
+      typeof config.minTopK !== 'number' ||
+      !Number.isFinite(config.minTopK) ||
+      config.minTopK < 1 ||
+      !Number.isInteger(config.minTopK)
+    ) {
+      throw new ValidationError('minTopK must be a positive integer');
     }
   }
 
@@ -139,6 +181,28 @@ export function validateConfig(config: ReorderConfig): void {
       config.rerankerTimeoutMs < 0
     ) {
       throw new ValidationError('rerankerTimeoutMs must be a non-negative finite number');
+    }
+  }
+
+  if (config.rerankerConcurrency !== undefined) {
+    if (
+      typeof config.rerankerConcurrency !== 'number' ||
+      !Number.isFinite(config.rerankerConcurrency) ||
+      config.rerankerConcurrency < 1 ||
+      !Number.isInteger(config.rerankerConcurrency)
+    ) {
+      throw new ValidationError('rerankerConcurrency must be a positive integer');
+    }
+  }
+
+  if (config.rerankerBatchSize !== undefined) {
+    if (
+      typeof config.rerankerBatchSize !== 'number' ||
+      !Number.isFinite(config.rerankerBatchSize) ||
+      config.rerankerBatchSize < 1 ||
+      !Number.isInteger(config.rerankerBatchSize)
+    ) {
+      throw new ValidationError('rerankerBatchSize must be a positive integer');
     }
   }
 
@@ -206,6 +270,10 @@ export function validateConfig(config: ReorderConfig): void {
 
   if (config.topK !== undefined && (typeof config.topK !== 'number' || config.topK < 1 || !Number.isInteger(config.topK))) {
     throw new ValidationError('topK must be a positive integer');
+  }
+
+  if (config.topK !== undefined && config.minTopK !== undefined && config.minTopK > config.topK) {
+    throw new ValidationError('minTopK cannot exceed topK');
   }
 
   if (config.packing !== undefined && !VALID_PACKING.includes(config.packing)) {
@@ -296,14 +364,24 @@ export function mergeConfig(config?: Partial<ReorderConfig>): MergedReorderConfi
     endCount: config?.endCount,
     groupBy: config?.groupBy,
     reranker: config?.reranker,
+    rerankerConcurrency: config?.rerankerConcurrency,
+    rerankerBatchSize: config?.rerankerBatchSize,
     rerankerAbortSignal: config?.rerankerAbortSignal,
     rerankerTimeoutMs: config?.rerankerTimeoutMs,
     customComparator: config?.customComparator,
     minScore: config?.minScore,
     maxTokens: config?.maxTokens,
+    maxChars: config?.maxChars,
+    charCounter: config?.charCounter,
     tokenCounter: config?.tokenCounter,
+    scoreClamp: config?.scoreClamp,
+    minTopK: config?.minTopK,
     onRerankerError: config?.onRerankerError,
+    validateRerankerOutputLength: config?.validateRerankerOutputLength,
+    validateRerankerOutputOrder: config?.validateRerankerOutputOrder,
+    validateRerankerOutputOrderByIndex: config?.validateRerankerOutputOrderByIndex,
     onDiagnostics: config?.onDiagnostics,
+    onTraceStep: config?.onTraceStep,
     includePriorityScore: config?.includePriorityScore,
     deduplicate: config?.deduplicate,
     deduplicateThreshold: config?.deduplicateThreshold,

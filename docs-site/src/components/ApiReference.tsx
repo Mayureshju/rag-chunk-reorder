@@ -29,6 +29,7 @@ export function ApiReference() {
     { name: 'validateConfig(config)', desc: 'Validate configuration object' },
     { name: 'mergeConfig(config)', desc: 'Merge partial config with defaults' },
     { name: 'deduplicateChunks(chunks, opts?)', desc: 'Remove exact or fuzzy duplicates' },
+    { name: 'deduplicateChunksUnsafe(chunks, opts?)', desc: 'Permissive dedup (coerce)' },
     { name: 'trigramSimilarity(a, b)', desc: 'Trigram Jaccard similarity between two strings' },
     { name: 'serializeChunks(chunks)', desc: 'Serialize chunks to JSON string' },
     { name: 'deserializeChunks(json)', desc: 'Deserialize chunks from JSON string' },
@@ -55,6 +56,17 @@ export function ApiReference() {
     <section id="api">
       <div className="section-label">Reference</div>
       <h2>API Reference</h2>
+
+      <div className="card" style={{ marginBottom: 24 }}>
+        <h3 style={{ marginBottom: 12 }}>Config Highlights</h3>
+        <pre style={{ margin: 0, fontSize: '0.8rem' }}>{`// Budget + diagnostics clarity
+const reorderer = new Reorderer({
+  maxChars: 4000,
+  charCounter: (text) => Array.from(text).length,
+  scoreClamp: [0, 1],
+  validateRerankerOutputOrderByIndex: true,
+});`}</pre>
+      </div>
 
       <div className="card" style={{ marginBottom: 24 }}>
         <h3 style={{ marginBottom: 16 }}>Reorderer Class</h3>
@@ -109,6 +121,7 @@ interface ChunkMetadata {
   timestamp?: number;
   page?: number;
   sectionIndex?: number;
+  chunkId?: string;
   sourceId?: string | number | boolean;
   sourceReliability?: number;
   tokenCount?: number;
@@ -116,7 +129,19 @@ interface ChunkMetadata {
 }
 
 interface Reranker {
-  rerank(chunks: Chunk[], query: string, options?: { signal?: AbortSignal }): Promise<Chunk[]>;
+  rerank(chunks: Chunk[], query: string, options?: { signal?: AbortSignal }): Promise<RerankerResult>;
+}
+
+type RerankerResult = Chunk[] | { chunks: Chunk[]; scores: number[] };
+
+interface ReorderConfigExtras {
+  maxChars?: number;
+  charCounter?: (text: string) => number;
+  minTopK?: number;
+  validateRerankerOutputLength?: boolean;
+  validateRerankerOutputOrder?: boolean;
+  validateRerankerOutputOrderByIndex?: boolean;
+  scoreClamp?: [number, number];
 }
 
 type Strategy = 'scoreSpread' | 'preserveOrder'
