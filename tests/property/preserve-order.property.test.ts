@@ -120,3 +120,37 @@ describe('PreserveOrder sourceId normalization', () => {
     expect(result.map((c) => c.id)).toEqual(['b', 'a', 'c']);
   });
 });
+
+describe('PreserveOrder custom source field', () => {
+  it('should group by the provided source field instead of sourceId', () => {
+    const chunks: ScoredChunk[] = [
+      {
+        id: 'a',
+        text: 'a',
+        score: 0.9,
+        priorityScore: 0.9,
+        originalIndex: 0,
+        metadata: { docId: 'doc-1', sectionIndex: 1 },
+      },
+      {
+        id: 'b',
+        text: 'b',
+        score: 0.8,
+        priorityScore: 0.8,
+        originalIndex: 1,
+        metadata: { docId: 'doc-1', sectionIndex: 0 },
+      },
+      {
+        id: 'c',
+        text: 'c',
+        score: 0.7,
+        priorityScore: 0.7,
+        originalIndex: 2,
+        metadata: { docId: 'doc-2', sectionIndex: 0 },
+      },
+    ];
+
+    const result = preserveOrder(chunks, 'docId');
+    expect(result.map((c) => c.id)).toEqual(['b', 'a', 'c']);
+  });
+});

@@ -63,6 +63,13 @@ function containsAny(text: string, terms: string[]): boolean {
 export function detectQueryIntent(query: string | undefined, config: AutoStrategyConfig): QueryIntent {
   if (!query || query.trim().length === 0) return 'factoid';
 
+  if (config.intentDetector) {
+    const detected = config.intentDetector(query);
+    if (detected === 'factoid' || detected === 'narrative' || detected === 'temporal') {
+      return detected;
+    }
+  }
+
   const temporalTerms = config.temporalQueryTerms ?? [];
   const narrativeTerms = config.narrativeQueryTerms ?? [];
 
@@ -71,7 +78,7 @@ export function detectQueryIntent(query: string | undefined, config: AutoStrateg
   return 'factoid';
 }
 
-export function metadataCoverage(chunks: Chunk[]): MetadataCoverage {
+export function metadataCoverage(chunks: Chunk[], sourceField: string = 'sourceId'): MetadataCoverage {
   if (chunks.length === 0) {
     return { timestamp: 0, sourceId: 0, sectionIndex: 0 };
   }
@@ -83,7 +90,7 @@ export function metadataCoverage(chunks: Chunk[]): MetadataCoverage {
   for (const c of chunks) {
     const timestampValue = c.metadata?.timestamp;
     const sectionIndexValue = c.metadata?.sectionIndex;
-    const sourceValue = normalizeSourceId(c.metadata?.sourceId);
+    const sourceValue = normalizeSourceId(c.metadata?.[sourceField]);
 
     if (typeof timestampValue === 'number' && Number.isFinite(timestampValue)) timestamp++;
     if (typeof sectionIndexValue === 'number' && Number.isFinite(sectionIndexValue)) sectionIndex++;
@@ -100,9 +107,14 @@ export function metadataCoverage(chunks: Chunk[]): MetadataCoverage {
 /**
  * Resolve strategy for strategy='auto' based on query intent and metadata availability.
  */
-export function resolveAutoStrategy(chunks: Chunk[], query: string | undefined, config: AutoStrategyConfig): Exclude<Strategy, 'auto'> {
+export function resolveAutoStrategy(
+  chunks: Chunk[],
+  query: string | undefined,
+  config: AutoStrategyConfig,
+  preserveOrderSourceField: string = 'sourceId',
+): Exclude<Strategy, 'auto'> {
   const intent = detectQueryIntent(query, config);
-  const coverage = metadataCoverage(chunks);
+  const coverage = metadataCoverage(chunks, preserveOrderSourceField);
 
   const temporalThreshold = config.temporalTimestampCoverageThreshold ?? 0.4;
   const narrativeSourceThreshold = config.narrativeSourceCoverageThreshold ?? 0.4;

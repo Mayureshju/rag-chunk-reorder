@@ -167,6 +167,16 @@ describe('preserveOrder + groupBy sourceId rejection', () => {
     ).toThrow(ValidationError);
   });
 
+  it('should throw ValidationError when preserveOrder uses a custom source field and groupBy matches it', () => {
+    expect(() =>
+      validateConfig({
+        strategy: 'preserveOrder',
+        preserveOrderSourceField: 'docId',
+        groupBy: 'docId',
+      }),
+    ).toThrow(ValidationError);
+  });
+
   it('should allow preserveOrder without groupBy', () => {
     expect(() =>
       validateConfig({ strategy: 'preserveOrder' }),
@@ -177,6 +187,57 @@ describe('preserveOrder + groupBy sourceId rejection', () => {
     expect(() =>
       validateConfig({ strategy: 'preserveOrder', groupBy: 'page' }),
     ).not.toThrow();
+  });
+});
+
+describe('scoreNormalization validation', () => {
+  it('should accept valid scoreNormalization values', () => {
+    expect(() => validateConfig({ scoreNormalization: 'none' })).not.toThrow();
+    expect(() => validateConfig({ scoreNormalization: 'minMax' })).not.toThrow();
+    expect(() => validateConfig({ scoreNormalization: 'zScore' })).not.toThrow();
+    expect(() => validateConfig({ scoreNormalization: 'softmax' })).not.toThrow();
+  });
+
+  it('should reject invalid scoreNormalization values', () => {
+    expect(() => validateConfig({ scoreNormalization: 'bad' as any })).toThrow(ValidationError);
+  });
+
+  it('should reject invalid scoreNormalizationTemperature', () => {
+    expect(() => validateConfig({ scoreNormalizationTemperature: 0 })).toThrow(ValidationError);
+    expect(() => validateConfig({ scoreNormalizationTemperature: -1 })).toThrow(ValidationError);
+  });
+});
+
+describe('chronologicalOrder validation', () => {
+  it('should accept asc/desc', () => {
+    expect(() => validateConfig({ chronologicalOrder: 'asc' })).not.toThrow();
+    expect(() => validateConfig({ chronologicalOrder: 'desc' })).not.toThrow();
+  });
+
+  it('should reject invalid chronologicalOrder', () => {
+    expect(() => validateConfig({ chronologicalOrder: 'later' as any })).toThrow(ValidationError);
+  });
+});
+
+describe('streamingWindowSize validation', () => {
+  it('should reject non-positive streamingWindowSize', () => {
+    expect(() => validateConfig({ streamingWindowSize: 0 })).toThrow(ValidationError);
+  });
+
+  it('should accept positive integer streamingWindowSize', () => {
+    expect(() => validateConfig({ streamingWindowSize: 64 })).not.toThrow();
+  });
+});
+
+describe('deduplicate length bucket/maxCandidates validation', () => {
+  it('should reject invalid deduplicateLengthBucketSize', () => {
+    expect(() => validateConfig({ deduplicateLengthBucketSize: 0 })).toThrow(ValidationError);
+    expect(() => validateConfig({ deduplicateLengthBucketSize: 2.5 })).toThrow(ValidationError);
+  });
+
+  it('should reject invalid deduplicateMaxCandidates', () => {
+    expect(() => validateConfig({ deduplicateMaxCandidates: 0 })).toThrow(ValidationError);
+    expect(() => validateConfig({ deduplicateMaxCandidates: 2.2 })).toThrow(ValidationError);
   });
 });
 
@@ -425,7 +486,13 @@ describe('diversity validation', () => {
   it('should accept valid diversity config', () => {
     expect(() =>
       validateConfig({
-        diversity: { enabled: true, lambda: 0.7, sourceDiversityWeight: 0.2, sourceField: 'sourceId' },
+        diversity: {
+          enabled: true,
+          lambda: 0.7,
+          sourceDiversityWeight: 0.2,
+          sourceField: 'sourceId',
+          maxCandidates: 100,
+        },
       }),
     ).not.toThrow();
   });
@@ -434,6 +501,24 @@ describe('diversity validation', () => {
     expect(() =>
       validateConfig({
         diversity: { enabled: true, lambda: -0.1 },
+      }),
+    ).toThrow(ValidationError);
+  });
+
+  it('should reject invalid maxCandidates', () => {
+    expect(() =>
+      validateConfig({
+        diversity: { enabled: true, maxCandidates: 1 },
+      }),
+    ).toThrow(ValidationError);
+    expect(() =>
+      validateConfig({
+        diversity: { enabled: true, maxCandidates: -2 },
+      }),
+    ).toThrow(ValidationError);
+    expect(() =>
+      validateConfig({
+        diversity: { enabled: true, maxCandidates: 2.5 },
       }),
     ).toThrow(ValidationError);
   });

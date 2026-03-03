@@ -42,6 +42,23 @@ describe('Property 7: Chronological ascending order', () => {
   });
 });
 
+describe('Chronological descending order', () => {
+  it('should produce non-increasing timestamps in output', () => {
+    fc.assert(
+      fc.property(makeChunksWithTimestampArb(1, 30), (chunks) => {
+        const result = chronological(chunks, 'desc');
+
+        for (let i = 1; i < result.length; i++) {
+          const prevTs = result[i - 1].metadata?.timestamp ?? -Infinity;
+          const currTs = result[i].metadata?.timestamp ?? -Infinity;
+          expect(currTs).toBeLessThanOrEqual(prevTs);
+        }
+      }),
+      { numRuns: 100 },
+    );
+  });
+});
+
 // Feature: chunk-reordering-library, Property 8: Chronological tie-breaking by priority
 // Validates: Requirements 5.2
 describe('Property 8: Chronological tie-breaking by priority', () => {

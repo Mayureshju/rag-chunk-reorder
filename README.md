@@ -30,6 +30,9 @@ Context-aware chunk reordering for RAG pipelines. Mitigates the **lost-in-the-mi
 - [How It Works](#how-it-works)
 - [Install](#install)
 - [Quick Start](#quick-start)
+- [Presets](#presets)
+- [Token Counters](#token-counters)
+- [CLI](#cli)
 - [Strategies](#strategies)
 - [Configuration](#configuration)
 - [Advanced Usage](#advanced-usage)
@@ -39,7 +42,9 @@ Context-aware chunk reordering for RAG pipelines. Mitigates the **lost-in-the-mi
 - [Recipes](#recipes)
 - [Benchmarks](#benchmarks)
 - [Performance Considerations](#performance-considerations)
+- [Decision Guide](#decision-guide)
 - [Best Practices](#best-practices)
+- [Gotchas](#gotchas)
 - [Requirements](#requirements)
 - [Release Cadence](#release-cadence)
 - [License](#license)
@@ -185,6 +190,64 @@ const reordered = reorderer.reorderSync(chunks);
 
 ---
 
+## Presets
+
+Use opinionated presets to get started quickly:
+
+```typescript
+import { Reorderer, reordererPresets, getPreset } from 'rag-chunk-reorder';
+
+const reorderer = new Reorderer(reordererPresets.standard);
+
+// Or clone a preset before customizing
+const config = getPreset('diverse');
+config.topK = 8;
+const tuned = new Reorderer(config);
+```
+
+---
+
+## Token Counters
+
+Built-in helpers for quick token budgeting:
+
+```typescript
+import { Reorderer, tokenCounterFactory } from 'rag-chunk-reorder';
+
+const reorderer = new Reorderer({
+  maxTokens: 2048,
+  tokenCounter: tokenCounterFactory('char4'), // ~1 token per 4 chars
+});
+```
+
+Optional tiktoken-based counter (if `@dqbd/tiktoken` or `tiktoken` is installed):
+
+```typescript
+import { createTiktokenCounter, Reorderer } from 'rag-chunk-reorder';
+
+const tokenCounter = await createTiktokenCounter({ model: 'gpt-4o-mini' });
+const reorderer = new Reorderer({ maxTokens: 4096, tokenCounter });
+```
+
+Install an optional tokenizer:
+
+```bash
+npm install @dqbd/tiktoken
+```
+
+---
+
+## CLI
+
+Reorder JSON or JSONL from the terminal:
+
+```bash
+rag-chunk-reorder --input chunks.json --output reordered.json --strategy scoreSpread --topK 8
+rag-chunk-reorder --jsonl --input chunks.jsonl --query "when did it happen?" --strategy auto
+```
+
+---
+
 ## Strategies
 
 ### ScoreSpread (default)
@@ -219,6 +282,15 @@ const chunks = [
 ];
 ```
 
+Use a custom source field:
+
+```typescript
+const reorderer = new Reorderer({
+  strategy: 'preserveOrder',
+  preserveOrderSourceField: 'docId',
+});
+```
+
 ### Chronological
 
 Sorts by timestamp ascending. Ideal for event logs, chat transcripts, and time-series data.
@@ -230,6 +302,15 @@ const chunks = [
   { id: '1', text: 'Event A', score: 0.8, metadata: { timestamp: 1700000000 } },
   { id: '2', text: 'Event B', score: 0.9, metadata: { timestamp: 1700000100 } },
 ];
+```
+
+Descending order for “latest first”:
+
+```typescript
+const reorderer = new Reorderer({
+  strategy: 'chronological',
+  chronologicalOrder: 'desc',
+});
 ```
 
 ### Auto
@@ -246,6 +327,17 @@ const reorderer = new Reorderer({
     temporalTimestampCoverageThreshold: 0.4,
     narrativeSourceCoverageThreshold: 0.4,
     narrativeSectionCoverageThreshold: 0.3,
+  },
+});
+```
+
+Custom intent detector:
+
+```typescript
+const reorderer = new Reorderer({
+  strategy: 'auto',
+  autoStrategy: {
+    intentDetector: (query) => query?.includes('timeline') ? 'temporal' : undefined,
   },
 });
 ```
@@ -269,6 +361,8 @@ const reorderer = new Reorderer({
 const reorderer = new Reorderer({
   // Strategy selection
   strategy: 'scoreSpread', // 'scoreSpread' | 'preserveOrder' | 'chronological' | 'custom' | 'auto'
+  chronologicalOrder: 'asc', // 'asc' | 'desc' (chronological)
+  preserveOrderSourceField: 'sourceId', // custom field for preserveOrder
 
   // Auto strategy controls (used when strategy = 'auto')
   autoStrategy: {
@@ -284,6 +378,8 @@ const reorderer = new Reorderer({
     section: 0.0, // weight for normalized sectionIndex
     sourceReliability: 0.0, // weight for normalized source reliability
   },
+  scoreNormalization: 'none', // 'none' | 'minMax' | 'zScore' | 'softmax'
+  scoreNormalizationTemperature: 1.0, // temperature for softmax
 
   // ScoreSpread options (optional)
   startCount: 3, // top chunks to place at start
@@ -307,6 +403,8 @@ const reorderer = new Reorderer({
   deduplicate: true, // remove duplicate chunks
   deduplicateThreshold: 0.85, // fuzzy similarity threshold (0-1, default: 1.0 = exact)
   deduplicateKeep: 'highestScore', // 'highestScore' | 'first' | 'last'
+  deduplicateLengthBucketSize: 120, // optional length bucket prefilter
+  deduplicateMaxCandidates: 400, // optional cap on fuzzy comparisons
 
   // Diversity reranking (MMR)
   diversity: {
@@ -314,6 +412,7 @@ const reorderer = new Reorderer({
     lambda: 0.7, // relevance-vs-diversity tradeoff
     sourceDiversityWeight: 0.15, // penalize repeating same source
     sourceField: 'sourceId',
+    maxCandidates: 200, // optional cap to bound MMR cost on large sets
   },
 
   // Grouping
@@ -342,6 +441,10 @@ const reorderer = new Reorderer({
 
   // Debug
   includePriorityScore: true, // include computed priorityScore in output metadata
+  includeExplain: true, // include per-chunk placement explanation
+
+  // Streaming (iterables)
+  streamingWindowSize: 128, // reorderStream window size for iterables
 });
 ```
 
@@ -350,6 +453,8 @@ const reorderer = new Reorderer({
 | Option                 | Type                                                                    | Default         | Description                                                  |
 | ---------------------- | ----------------------------------------------------------------------- | --------------- | ------------------------------------------------------------ |
 | `strategy`             | `'scoreSpread'` \| `'preserveOrder'` \| `'chronological'` \| `'custom'` \| `'auto'` | `'scoreSpread'` | Reordering algorithm to use                                  |
+| `chronologicalOrder`   | `'asc'` \| `'desc'`                                                     | `'asc'`         | Direction for chronological ordering                         |
+| `preserveOrderSourceField` | `string`                                                          | `'sourceId'`    | Metadata field used by preserveOrder grouping                |
 | `startCount`           | `number`                                                                | `undefined`     | Number of top chunks to place at the beginning (scoreSpread) |
 | `endCount`             | `number`                                                                | `undefined`     | Number of next top chunks to place at the end (scoreSpread)  |
 | `minScore`             | `number`                                                                | `undefined`     | Minimum relevance score threshold                            |
@@ -360,12 +465,17 @@ const reorderer = new Reorderer({
 | `minTopK`              | `number`                                                                | `undefined`     | Minimum chunks returned even if budgets are tight            |
 | `tokenCounter`         | `(text) => number`                                                      | `undefined`     | Token counter required for maxTokens                         |
 | `scoreClamp`           | `[number, number]`                                                      | `undefined`     | Clamp chunk scores to a safe range                            |
+| `scoreNormalization`   | `'none'` \| `'minMax'` \| `'zScore'` \| `'softmax'`                      | `'none'`        | Normalize similarity scores before weighting                 |
+| `scoreNormalizationTemperature` | `number`                                                      | `1.0`           | Softmax temperature                                          |
 | `packing`              | `'auto'` \| `'prefix'` \| `'edgeAware'`                                 | `'auto'`        | How token/topK budgets are packed                            |
 | `deduplicate`          | `boolean`                                                               | `false`         | Whether to remove duplicates                                 |
 | `deduplicateThreshold` | `number`                                                                | `1.0`           | Similarity threshold for fuzzy dedup (0-1)                   |
+| `deduplicateLengthBucketSize` | `number`                                                        | `undefined`     | Optional length bucket prefilter (chars)                     |
+| `deduplicateMaxCandidates` | `number`                                                            | `undefined`     | Optional cap on fuzzy comparisons                            |
 | `diversity.enabled`    | `boolean`                                                               | `false`         | Enable MMR/source diversity reranking                        |
 | `diversity.lambda`     | `number` (0-1)                                                          | `0.7`           | Relevance-vs-diversity tradeoff                              |
 | `diversity.sourceField`| `string`                                                                | `'sourceId'`    | Metadata field used for source diversity                     |
+| `diversity.maxCandidates`| `number`                                                              | `undefined`     | Optional cap on candidates to bound MMR cost                 |
 | `groupBy`              | `string`                                                                | `undefined`     | Metadata field to group chunks by                            |
 | `weights.similarity`   | `number`                                                                | `1.0`           | Weight for base relevance score                              |
 | `weights.time`         | `number`                                                                | `0.0`           | Weight for timestamp in priority calculation                 |
@@ -374,6 +484,7 @@ const reorderer = new Reorderer({
 | `autoStrategy.temporalTimestampCoverageThreshold` | `number` (0-1)                                        | `0.4`           | Timestamp coverage needed for temporal auto-routing          |
 | `autoStrategy.narrativeSourceCoverageThreshold`   | `number` (0-1)                                        | `0.4`           | Source coverage needed for narrative auto-routing            |
 | `autoStrategy.narrativeSectionCoverageThreshold`  | `number` (0-1)                                        | `0.3`           | Section coverage needed for narrative auto-routing           |
+| `autoStrategy.intentDetector`                     | `(query) => QueryIntent`                              | `undefined`     | Custom intent detector (optional)                            |
 | `validationMode`     | `'strict'` \| `'coerce'`                                         | `'strict'`     | Input validation behavior                                    |
 | `onDiagnostics`      | `(stats) => void`                                                 | `undefined`    | Structured pipeline stats per reorder call                   |
 | `onTraceStep`        | `(step, ms, details?) => void`                                   | `undefined`    | Per-step timing hook                                         |
@@ -381,6 +492,8 @@ const reorderer = new Reorderer({
 | `validateRerankerOutputOrder`  | `boolean`                                                | `true`         | Verify reranker output order matches input (unique ids)      |
 | `validateRerankerOutputOrderByIndex` | `boolean`                                           | `false`        | Strict index order check using id+text                       |
 | `includePriorityScore` | `boolean`                                                               | `false`         | Include computed priority in output metadata                 |
+| `includeExplain`      | `boolean`                                                               | `false`         | Attach per-chunk explanation metadata                        |
+| `streamingWindowSize` | `number`                                                                | `128`           | Window size when reorderStream receives an iterable          |
 | `rerankerTimeoutMs`    | `number`                                                                | `undefined`     | Reranker timeout in milliseconds                             |
 | `rerankerAbortSignal`  | `AbortSignal`                                                           | `undefined`     | Abort signal forwarded to reranker                           |
 | `rerankerConcurrency`  | `number`                                                                | `undefined`     | Max concurrent reranker calls                                |
@@ -417,6 +530,24 @@ const result = reorderer.reorderSync(chunks, { strategy: 'chronological' });
 
 // Instance config is unchanged
 reorderer.getConfig().strategy; // 'scoreSpread'
+```
+
+### Explain Mode
+
+Attach per-chunk placement reasons for debugging and audits:
+
+```typescript
+const reorderer = new Reorderer({ includeExplain: true });
+const output = reorderer.reorderSync(chunks);
+
+console.log(output[0].metadata?.reorderExplain);
+```
+
+### Diagnostics Shortcut
+
+```typescript
+const reorderer = new Reorderer({ strategy: 'scoreSpread' });
+const { chunks: output, diagnostics } = await reorderer.reorderWithDiagnostics(chunks, query);
 ```
 
 ### Auto Strategy Selection
@@ -478,11 +609,13 @@ const reorderer = new Reorderer({
     lambda: 0.7,
     sourceDiversityWeight: 0.15,
     sourceField: 'sourceId',
+    maxCandidates: 200,
   },
 });
 ```
 
 This reranks chunks before final strategy application to reduce near-duplicate context waste.
+Use `maxCandidates` to bound MMR cost on large retrieval sets.
 
 ### Streaming
 
@@ -492,7 +625,7 @@ for await (const chunk of reorderer.reorderStream(chunks, 'my query')) {
 }
 ```
 
-> **Note:** The current streaming implementation materializes the full result before yielding. True incremental streaming is planned for a future release.
+> **Note:** When you pass a Chunk[] array, the result is materialized before yielding. For iterables/async iterables, `reorderStream` processes chunks in windows (configurable via `streamingWindowSize`) to bound memory. Windowed streaming is approximate and may differ from a global reorder.
 
 ### Deduplication
 
@@ -508,13 +641,15 @@ const unique = deduplicateChunks(chunks);
 const fuzzyUnique = deduplicateChunks(chunks, {
   threshold: 0.85,
   keep: 'highestScore',
+  lengthBucketSize: 120,
+  maxCandidates: 400,
 });
 
 // Check similarity between two texts
 const sim = trigramSimilarity('hello world foo', 'hello world bar'); // ~0.6
 ```
 
-Fuzzy dedup uses O(n²) pairwise comparison. For arrays > 500 chunks, consider exact dedup or pre-filtering.
+Fuzzy dedup uses O(n²) pairwise comparison. For arrays > 500 chunks, consider exact dedup, or enable `lengthBucketSize`/`maxCandidates` to bound comparisons.
 
 `deduplicateChunks` validates inputs in `strict` mode by default. If you need the previous permissive behavior,
 use `deduplicateChunksUnsafe` or pass `{ validationMode: 'coerce' }`.
@@ -573,9 +708,12 @@ class Reorderer {
   constructor(config?: ReorderConfig);
   reorderSync(chunks: Chunk[], overrides?: Partial<ReorderConfig>): Chunk[];
   reorderSync(chunks: Chunk[], query: string, overrides?: Partial<ReorderConfig>): Chunk[];
+  reorderSyncWithDiagnostics(chunks: Chunk[], overrides?: Partial<ReorderConfig>): ReorderResult;
+  reorderSyncWithDiagnostics(chunks: Chunk[], query: string, overrides?: Partial<ReorderConfig>): ReorderResult;
   reorder(chunks: Chunk[], query?: string, overrides?: Partial<ReorderConfig>): Promise<Chunk[]>;
+  reorderWithDiagnostics(chunks: Chunk[], query?: string, overrides?: Partial<ReorderConfig>): Promise<ReorderResult>;
   reorderStream(
-    chunks: Chunk[],
+    chunks: Chunk[] | Iterable<Chunk> | AsyncIterable<Chunk>,
     query?: string,
     overrides?: Partial<ReorderConfig>,
   ): AsyncIterable<Chunk>;
@@ -588,10 +726,15 @@ class Reorderer {
 | Function                                        | Description                  |
 | ----------------------------------------------- | ---------------------------- |
 | `scoreChunks(chunks, weights)`                  | Compute priority scores      |
+| `scoreChunksWithOptions(chunks, weights, options?)` | Priority scores with normalization |
 | `validateChunks(chunks)`                        | Validate chunk array         |
 | `prepareChunks(chunks, mode?)`                  | Validate or coerce chunks    |
 | `validateConfig(config)`                        | Validate configuration       |
 | `mergeConfig(config)`                           | Merge with defaults          |
+| `reordererPresets`                              | Preset configs               |
+| `getPreset(name)`                               | Retrieve a preset copy       |
+| `tokenCounterFactory(name)`                     | Built-in token counters      |
+| `createTiktokenCounter(options?)`               | Optional tiktoken counter    |
 | `deduplicateChunks(chunks, options?)`           | Remove duplicates            |
 | `deduplicateChunksUnsafe(chunks, options?)`     | Remove duplicates (coerce)   |
 | `trigramSimilarity(a, b)`                       | Trigram Jaccard similarity   |
@@ -638,7 +781,21 @@ interface ChunkMetadata {
   sourceId?: string | number | boolean;
   sourceReliability?: number;
   tokenCount?: number;
+  reorderExplain?: ReorderExplain;
   [key: string]: unknown;
+}
+
+interface ReorderResult {
+  chunks: Chunk[];
+  diagnostics: ReorderDiagnostics;
+}
+
+interface ReorderExplain {
+  strategy: 'scoreSpread' | 'preserveOrder' | 'chronological' | 'custom';
+  placement: string;
+  position: number;
+  priorityRank?: number;
+  priorityScore?: number;
 }
 
 interface Reranker {
@@ -748,8 +905,21 @@ The reordering pipeline processes chunks in this order:
 ### Recommendations
 
 - **For large datasets (>500 chunks)**: Use exact dedup or pre-filter
+- **Diversity rerank at scale**: Set `diversity.maxCandidates` to bound MMR cost (e.g., 200–500)
 - **Token budget**: Set `maxTokens` to avoid context overflow
-- **Streaming**: Use `reorderStream()` for memory-efficient processing of large result sets
+- **Streaming**: Use `reorderStream()` with `streamingWindowSize` for windowed processing of large result sets
+
+---
+
+## Decision Guide
+
+| Use Case | Recommended Strategy | Notes |
+| -------- | -------------------- | ----- |
+| General RAG | `scoreSpread` | Best default, exploits primacy/recency |
+| Multi-document narratives | `preserveOrder` | Requires `sourceId` + `sectionIndex` coverage |
+| Logs / timelines | `chronological` | Set `chronologicalOrder: 'desc'` for latest-first |
+| Mixed workloads | `auto` | Needs good metadata coverage for routing |
+| Small topK with redundancy | `scoreSpread` + `diversity.enabled` | Reduces near-duplicate waste |
 
 ---
 
@@ -775,6 +945,16 @@ The reordering pipeline processes chunks in this order:
 
 ---
 
+## Gotchas
+
+- **Auto strategy needs metadata coverage**: Without `timestamp`/`sourceId`/`sectionIndex`, auto will fall back to `scoreSpread`.
+- **Windowed streaming is approximate**: `reorderStream()` over iterables reorders per window; results can differ from full-batch ordering.
+- **Score normalization matters**: If your retrieval scores are not comparable, set `scoreNormalization` to stabilize weighting.
+- **Fuzzy dedup can be expensive**: For large sets, prefer exact dedup or use `lengthBucketSize`/`maxCandidates`.
+- **PreserveOrder needs stable section indices**: Missing or non-finite `sectionIndex` values fall back to input order.
+
+---
+
 ## Integrations
 
 First-class adapters are available for framework-shaped objects:
@@ -782,6 +962,41 @@ First-class adapters are available for framework-shaped objects:
 - `reorderLangChainDocuments()` and `reorderLangChainPairs()`
 - `reorderLlamaIndexNodes()`
 - `reorderHaystackDocuments()`
+
+### Adapter Quickstarts
+
+LangChain:
+
+```typescript
+import { reorderLangChainDocuments } from 'rag-chunk-reorder';
+
+const reordered = await reorderLangChainDocuments(docs, {
+  query,
+  config: { strategy: 'scoreSpread', topK: 8 },
+});
+```
+
+LlamaIndex:
+
+```typescript
+import { reorderLlamaIndexNodes } from 'rag-chunk-reorder';
+
+const reordered = await reorderLlamaIndexNodes(nodes, {
+  query,
+  config: { strategy: 'auto', topK: 8 },
+});
+```
+
+Haystack:
+
+```typescript
+import { reorderHaystackDocuments } from 'rag-chunk-reorder';
+
+const reordered = await reorderHaystackDocuments(docs, {
+  query,
+  config: { strategy: 'chronological', chronologicalOrder: 'desc' },
+});
+```
 
 See runnable integration examples:
 
@@ -876,6 +1091,16 @@ Run:
 ```bash
 npm run bench
 ```
+
+Sample results (TopK = 4, `bench/data/sample.jsonl`):
+
+| Metric | Baseline (prefix) | Reordered (scoreSpread) |
+| ------ | ----------------- | ------------------------ |
+| keyPointRecall | 75.0% | 75.0% |
+| positionEffectiveness | 88.9% | 91.0% |
+| nDCG | 100.0% | 99.7% |
+
+Position effectiveness improves consistently because high-priority chunks are pushed to primacy/recency zones.
 
 ---
 

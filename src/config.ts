@@ -7,6 +7,7 @@ import {
   Strategy,
   ValidationMode,
   AbortSignalLike,
+  ScoreNormalization,
 } from './types';
 import { ValidationError } from './errors';
 
@@ -29,6 +30,7 @@ const VALID_STRATEGIES: Strategy[] = [
 
 const VALID_PACKING: PackingStrategy[] = ['auto', 'prefix', 'edgeAware'];
 const VALID_VALIDATION_MODES: ValidationMode[] = ['strict', 'coerce'];
+const VALID_SCORE_NORMALIZATION: ScoreNormalization[] = ['none', 'minMax', 'zScore', 'softmax'];
 
 const DEFAULT_WEIGHTS: ScoringWeights = {
   similarity: 1.0,
@@ -108,10 +110,11 @@ export function validateConfig(config: ReorderConfig): void {
     throw new ValidationError("customComparator is ignored when strategy is 'auto'");
   }
 
-  if (config.strategy === 'preserveOrder' && config.groupBy === 'sourceId') {
+  const preserveSourceField = config.preserveOrderSourceField ?? 'sourceId';
+  if (config.strategy === 'preserveOrder' && config.groupBy === preserveSourceField) {
     throw new ValidationError(
-      "preserveOrder strategy already groups by sourceId internally. " +
-      "Setting groupBy: 'sourceId' causes redundant double-grouping. " +
+      "preserveOrder strategy already groups by its source field internally. " +
+      `Setting groupBy: '${preserveSourceField}' causes redundant double-grouping. ` +
       "Remove groupBy or use a different strategy.",
     );
   }
@@ -282,6 +285,67 @@ export function validateConfig(config: ReorderConfig): void {
     );
   }
 
+  if (config.scoreNormalization !== undefined && !VALID_SCORE_NORMALIZATION.includes(config.scoreNormalization)) {
+    throw new ValidationError(
+      `Invalid scoreNormalization '${config.scoreNormalization}'. Valid values: ${VALID_SCORE_NORMALIZATION.join(', ')}`,
+    );
+  }
+
+  if (config.scoreNormalizationTemperature !== undefined) {
+    if (
+      typeof config.scoreNormalizationTemperature !== 'number' ||
+      !Number.isFinite(config.scoreNormalizationTemperature) ||
+      config.scoreNormalizationTemperature <= 0
+    ) {
+      throw new ValidationError('scoreNormalizationTemperature must be a positive finite number');
+    }
+  }
+
+  if (config.chronologicalOrder !== undefined && config.chronologicalOrder !== 'asc' && config.chronologicalOrder !== 'desc') {
+    throw new ValidationError("chronologicalOrder must be 'asc' or 'desc'");
+  }
+
+  if (config.preserveOrderSourceField !== undefined && typeof config.preserveOrderSourceField !== 'string') {
+    throw new ValidationError('preserveOrderSourceField must be a string');
+  }
+
+  if (config.includeExplain !== undefined && typeof config.includeExplain !== 'boolean') {
+    throw new ValidationError('includeExplain must be a boolean');
+  }
+
+  if (config.streamingWindowSize !== undefined) {
+    if (
+      typeof config.streamingWindowSize !== 'number' ||
+      !Number.isFinite(config.streamingWindowSize) ||
+      !Number.isInteger(config.streamingWindowSize) ||
+      config.streamingWindowSize < 1
+    ) {
+      throw new ValidationError('streamingWindowSize must be a positive integer');
+    }
+  }
+
+  if (config.deduplicateLengthBucketSize !== undefined) {
+    if (
+      typeof config.deduplicateLengthBucketSize !== 'number' ||
+      !Number.isFinite(config.deduplicateLengthBucketSize) ||
+      !Number.isInteger(config.deduplicateLengthBucketSize) ||
+      config.deduplicateLengthBucketSize < 1
+    ) {
+      throw new ValidationError('deduplicateLengthBucketSize must be a positive integer');
+    }
+  }
+
+  if (config.deduplicateMaxCandidates !== undefined) {
+    if (
+      typeof config.deduplicateMaxCandidates !== 'number' ||
+      !Number.isFinite(config.deduplicateMaxCandidates) ||
+      !Number.isInteger(config.deduplicateMaxCandidates) ||
+      config.deduplicateMaxCandidates < 1
+    ) {
+      throw new ValidationError('deduplicateMaxCandidates must be a positive integer');
+    }
+  }
+
   if (
     config.validationMode !== undefined &&
     !VALID_VALIDATION_MODES.includes(config.validationMode as ValidationMode)
@@ -318,6 +382,10 @@ export function validateConfig(config: ReorderConfig): void {
         }
       }
     }
+
+    if (a.intentDetector !== undefined && typeof a.intentDetector !== 'function') {
+      throw new ValidationError('autoStrategy.intentDetector must be a function');
+    }
   }
 
   if (config.diversity !== undefined) {
@@ -340,6 +408,16 @@ export function validateConfig(config: ReorderConfig): void {
     if (d.sourceField !== undefined && typeof d.sourceField !== 'string') {
       throw new ValidationError('diversity.sourceField must be a string');
     }
+    if (d.maxCandidates !== undefined) {
+      if (
+        typeof d.maxCandidates !== 'number' ||
+        !Number.isFinite(d.maxCandidates) ||
+        !Number.isInteger(d.maxCandidates) ||
+        d.maxCandidates < 2
+      ) {
+        throw new ValidationError('diversity.maxCandidates must be an integer >= 2');
+      }
+    }
   }
 }
 
@@ -359,7 +437,11 @@ export function mergeConfig(config?: Partial<ReorderConfig>): MergedReorderConfi
 
   const merged: MergedReorderConfig = {
     strategy: config?.strategy ?? 'scoreSpread',
+    chronologicalOrder: config?.chronologicalOrder ?? 'asc',
+    preserveOrderSourceField: config?.preserveOrderSourceField ?? 'sourceId',
     weights: { ...DEFAULT_WEIGHTS, ...config?.weights },
+    scoreNormalization: config?.scoreNormalization ?? 'none',
+    scoreNormalizationTemperature: config?.scoreNormalizationTemperature ?? 1.0,
     startCount: config?.startCount,
     endCount: config?.endCount,
     groupBy: config?.groupBy,
@@ -383,9 +465,12 @@ export function mergeConfig(config?: Partial<ReorderConfig>): MergedReorderConfi
     onDiagnostics: config?.onDiagnostics,
     onTraceStep: config?.onTraceStep,
     includePriorityScore: config?.includePriorityScore,
+    includeExplain: config?.includeExplain,
     deduplicate: config?.deduplicate,
     deduplicateThreshold: config?.deduplicateThreshold,
     deduplicateKeep: config?.deduplicateKeep,
+    deduplicateLengthBucketSize: config?.deduplicateLengthBucketSize,
+    deduplicateMaxCandidates: config?.deduplicateMaxCandidates,
     topK: config?.topK,
     autoStrategy: {
       ...DEFAULT_AUTO_STRATEGY,
@@ -396,6 +481,7 @@ export function mergeConfig(config?: Partial<ReorderConfig>): MergedReorderConfi
     diversity: { ...DEFAULT_DIVERSITY, ...config?.diversity },
     packing: config?.packing ?? 'auto',
     validationMode: config?.validationMode ?? 'strict',
+    streamingWindowSize: config?.streamingWindowSize ?? 128,
   };
   return merged;
 }

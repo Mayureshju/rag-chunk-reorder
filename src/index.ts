@@ -13,15 +13,18 @@ export type {
   ValidationMode,
   ReorderConfig,
   ReorderDiagnostics,
+  ReorderExplain,
+  ReorderResult,
   CoercionStats,
   AbortSignalLike,
   Reranker,
   RerankerResult,
+  ScoreNormalization,
 } from './types';
 
 // Core
 export { Reorderer } from './reorderer';
-export { scoreChunks } from './scorer';
+export { scoreChunks, scoreChunksWithOptions } from './scorer';
 export { validateConfig, mergeConfig } from './config';
 export type { MergedReorderConfig } from './config';
 export { validateChunks, prepareChunks } from './validator';
@@ -76,6 +79,14 @@ export type {
   LlamaIndexNodeLike,
   HaystackDocumentLike,
 } from './adapters';
+
+// Presets
+export { reordererPresets, getPreset } from './presets';
+export type { ReordererPresetName } from './presets';
+
+// Token counters
+export { tokenCounterFactory, createTiktokenCounter } from './token-counters';
+export type { TokenCounter, TokenCounterWithDispose } from './token-counters';
 
 // Errors
 export { ValidationError } from './errors';

@@ -541,8 +541,9 @@ export function GlobalStyles() {
         margin: 0;
         height: 100%;
         max-height: 280px;
-        overflow-y: auto;
-        overflow-x: auto;
+        overflow: auto;
+        scrollbar-gutter: stable;
+        -webkit-overflow-scrolling: touch;
       }
 
       .recipe-footer {
@@ -606,6 +607,14 @@ export function GlobalStyles() {
         .recipe-title-row h3 {
           font-size: 1rem;
         }
+
+        .recipe-code {
+          max-height: 180px;
+        }
+
+        .drop-in-code {
+          max-height: 180px;
+        }
       }
 
       /* Drop-In Recipes Section */
@@ -628,6 +637,7 @@ export function GlobalStyles() {
         transition: all 0.3s ease;
         display: flex;
         flex-direction: column;
+        min-height: 0;
       }
 
       .drop-in-card:hover {
@@ -667,7 +677,9 @@ export function GlobalStyles() {
         font-size: 0.72rem;
         margin: 0 0 16px 0;
         max-height: 220px;
-        overflow-y: auto;
+        overflow: auto;
+        scrollbar-gutter: stable;
+        -webkit-overflow-scrolling: touch;
         flex: 1;
       }
 

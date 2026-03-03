@@ -109,6 +109,17 @@ describe('Auto strategy selection', () => {
     expect(coverage.sourceId).toBe(0.5);
   });
 
+  it('metadataCoverage should honor custom source field', () => {
+    const coverage = metadataCoverage(
+      [
+        { id: 'a', text: 'A', score: 1, metadata: { docId: 'doc-a' } },
+        { id: 'b', text: 'B', score: 0.9, metadata: { docId: 'doc-b' } },
+      ],
+      'docId',
+    );
+    expect(coverage.sourceId).toBe(1);
+  });
+
   it('should not treat non-finite timestamps as temporal coverage for auto routing helper', () => {
     const chunks: Chunk[] = [
       { id: 'a', text: 'Event A', score: 0.9, metadata: { timestamp: NaN as unknown as number } },
@@ -134,6 +145,24 @@ describe('Auto strategy selection', () => {
     const autoResult = await auto.reorder(chunks, 'Summarize the full document flow');
     const expected = preserve.reorderSync(chunks);
 
+    expect(autoResult.map((c) => c.id)).toEqual(expected.map((c) => c.id));
+  });
+
+  it('should honor custom intentDetector in autoStrategy', async () => {
+    const chunks: Chunk[] = [
+      { id: 'a', text: 'Event B', score: 0.9, metadata: { timestamp: 200 } },
+      { id: 'b', text: 'Event A', score: 0.8, metadata: { timestamp: 100 } },
+    ];
+
+    const auto = new Reorderer({
+      strategy: 'auto',
+      autoStrategy: {
+        intentDetector: () => 'temporal',
+      },
+    });
+    const expected = new Reorderer({ strategy: 'chronological' }).reorderSync(chunks);
+
+    const autoResult = await auto.reorder(chunks, 'custom intent');
     expect(autoResult.map((c) => c.id)).toEqual(expected.map((c) => c.id));
   });
 

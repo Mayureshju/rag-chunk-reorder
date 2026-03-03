@@ -1,6 +1,6 @@
 {
   "name": "rag-chunk-reorder",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "RAG chunk reordering, retrieval reranking, and context packing to mitigate lost-in-the-middle in LLM context windows",
   "main": "dist/cjs/index.js",
   "types": "dist/cjs/index.d.ts",
@@ -15,6 +15,9 @@
         "default": "./dist/cjs/index.js"
       }
     }
+  },
+  "bin": {
+    "rag-chunk-reorder": "dist/cjs/cli.js"
   },
   "files": [
     "dist"
@@ -53,6 +56,18 @@
   },
   "homepage": "https://resonant-parfait-d49e6a.netlify.app",
   "sideEffects": false,
+  "peerDependencies": {
+    "@dqbd/tiktoken": "*",
+    "tiktoken": "*"
+  },
+  "peerDependenciesMeta": {
+    "@dqbd/tiktoken": {
+      "optional": true
+    },
+    "tiktoken": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "@types/jest": "^30.0.0",
     "@typescript-eslint/eslint-plugin": "^8.55.0",

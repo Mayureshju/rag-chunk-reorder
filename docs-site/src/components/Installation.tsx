@@ -61,7 +61,7 @@ export function Installation() {
 
       <div className="card">
         <h3 style={{ marginBottom: 12 }}>Quick Start</h3>
-        <pre style={{ margin: 0, fontSize: '0.82rem' }}>{`import { Reorderer } from 'rag-chunk-reorder';
+        <pre style={{ margin: 0, fontSize: '0.82rem' }}>{`import { Reorderer, reordererPresets } from 'rag-chunk-reorder';
 
 const chunks = [
   { id: '1', text: 'Most relevant passage', score: 0.95 },
@@ -71,12 +71,16 @@ const chunks = [
   { id: '5', text: 'Moderately relevant',   score: 0.78 },
 ];
 
-const reorderer = new Reorderer();
+const reorderer = new Reorderer(reordererPresets.standard);
 const result = reorderer.reorderSync(chunks);
 // → Highest scores at positions 1 and N (primacy + recency)
 
 // Async with reranker
 const asyncResult = await reorderer.reorder(chunks, 'my query');
+
+// Diagnostics
+const { chunks: output, diagnostics } =
+  reorderer.reorderSyncWithDiagnostics(chunks);
 
 // Streaming
 for await (const chunk of reorderer.reorderStream(chunks, 'q')) {

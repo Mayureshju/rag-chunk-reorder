@@ -32,16 +32,35 @@ autoStrategy: {
 }`,
     },
     {
-      icon: '📈', title: 'Diagnostics + Trace',
-      desc: 'Structured per-call stats and step timings for production tuning.',
-      code: `onDiagnostics: (stats) => console.log(stats),
-onTraceStep: (step, ms) =>
-  console.log(step, ms)`,
+      icon: '🧰', title: 'Presets + Token Counters',
+      desc: 'Start fast with presets and built-in token counter helpers.',
+      code: `const preset = reordererPresets.standard;
+const counter = tokenCounterFactory('char4');`,
+    },
+    {
+      icon: '🧾', title: 'Explain Mode',
+      desc: 'Attach per-chunk placement reasons for debugging and audits.',
+      code: `includeExplain: true`,
+    },
+    {
+      icon: '🧩', title: 'Diversity Rerank',
+      desc: 'MMR + source diversity with an optional cap for large retrieval sets.',
+      code: `diversity: {
+  enabled: true,
+  maxCandidates: 200,
+}`,
     },
     {
       icon: '🎚️', title: 'Score Clamp',
       desc: 'Clamp scores to a safe range to prevent outliers from dominating.',
       code: `scoreClamp: [0, 1]`,
+    },
+    {
+      icon: '📈', title: 'Diagnostics + Trace',
+      desc: 'Structured per-call stats and step timings for production tuning.',
+      code: `onDiagnostics: (stats) => console.log(stats),
+onTraceStep: (step, ms) =>
+  console.log(step, ms)`,
     },
     {
       icon: '🔀', title: 'Grouping + Top-K',
@@ -55,6 +74,11 @@ topK: 10`,
       code: `keyPointRecall(keyPoints, texts)
 positionEffectiveness(scored)
 ndcg(scores)`,
+    },
+    {
+      icon: '🧪', title: 'CLI Runner',
+      desc: 'Batch reorder JSON/JSONL with a single command.',
+      code: `rag-chunk-reorder --jsonl --input data.jsonl --topK 8`,
     },
   ];
 

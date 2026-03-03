@@ -10,6 +10,10 @@ export interface DeduplicateOptions {
   keep?: 'highestScore' | 'first' | 'last';
   /** Validation behavior when used as a direct API. Default: 'strict'. */
   validationMode?: ValidationMode;
+  /** Optional length bucket size (chars) to prefilter fuzzy comparisons. */
+  lengthBucketSize?: number;
+  /** Optional cap on comparisons per chunk in fuzzy mode. */
+  maxCandidates?: number;
 }
 
 /**
@@ -70,6 +74,8 @@ function buildTrigrams(text: string): Set<string> {
 export function deduplicateChunks(chunks: Chunk[], options?: DeduplicateOptions): Chunk[] {
   const threshold = options?.threshold ?? 1.0;
   const keep = options?.keep ?? 'highestScore';
+  const lengthBucketSize = options?.lengthBucketSize;
+  const maxCandidates = options?.maxCandidates;
 
   if (typeof threshold !== 'number' || !Number.isFinite(threshold) || threshold < 0 || threshold > 1) {
     throw new ValidationError('deduplicateThreshold must be a number between 0 and 1');
@@ -78,6 +84,26 @@ export function deduplicateChunks(chunks: Chunk[], options?: DeduplicateOptions)
     throw new ValidationError(
       `Invalid deduplicateKeep '${keep}'. Valid values: highestScore, first, last`,
     );
+  }
+  if (lengthBucketSize !== undefined) {
+    if (
+      typeof lengthBucketSize !== 'number' ||
+      !Number.isFinite(lengthBucketSize) ||
+      !Number.isInteger(lengthBucketSize) ||
+      lengthBucketSize < 1
+    ) {
+      throw new ValidationError('lengthBucketSize must be a positive integer');
+    }
+  }
+  if (maxCandidates !== undefined) {
+    if (
+      typeof maxCandidates !== 'number' ||
+      !Number.isFinite(maxCandidates) ||
+      !Number.isInteger(maxCandidates) ||
+      maxCandidates < 1
+    ) {
+      throw new ValidationError('maxCandidates must be a positive integer');
+    }
   }
 
   let working: Chunk[];
@@ -96,7 +122,7 @@ export function deduplicateChunks(chunks: Chunk[], options?: DeduplicateOptions)
     return deduplicateExact(working, keep);
   }
 
-  return deduplicateFuzzy(working, threshold, keep);
+  return deduplicateFuzzy(working, threshold, keep, lengthBucketSize, maxCandidates);
 }
 
 /**
@@ -136,6 +162,8 @@ function deduplicateFuzzy(
   chunks: Chunk[],
   threshold: number,
   keep: 'highestScore' | 'first' | 'last',
+  lengthBucketSize?: number,
+  maxCandidates?: number,
 ): Chunk[] {
   // Track which indices have been merged into another
   const removed = new Set<number>();
@@ -147,13 +175,28 @@ function deduplicateFuzzy(
     survivors.set(i, { chunk: chunks[i], orderIndex: i });
   }
 
+  const buckets =
+    lengthBucketSize && lengthBucketSize > 0
+      ? chunks.map((c) => Math.floor(c.text.length / lengthBucketSize))
+      : [];
+
   for (let i = 0; i < chunks.length; i++) {
     if (removed.has(i)) continue;
+    let comparisons = 0;
 
     for (let j = i + 1; j < chunks.length; j++) {
       if (removed.has(j)) continue;
+      if (lengthBucketSize && lengthBucketSize > 0) {
+        const bi = buckets[i];
+        const bj = buckets[j];
+        if (Math.abs(bi - bj) > 1) continue;
+      }
+      if (maxCandidates !== undefined) {
+        if (comparisons >= maxCandidates) break;
+      }
 
       const sim = trigramSimilarity(chunks[i].text, chunks[j].text);
+      comparisons++;
       if (sim >= threshold) {
         const survivor = survivors.get(i)!;
         const candidate = survivors.get(j)!;

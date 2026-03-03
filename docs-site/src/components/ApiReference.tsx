@@ -13,7 +13,17 @@ export function ApiReference() {
     {
       name: 'reorderStream(chunks, query?, overrides?)',
       ret: 'AsyncIterable<Chunk>',
-      desc: 'Streaming reorder. Yields chunks one at a time.',
+      desc: 'Streaming reorder. Windowed mode for iterables, full materialization for arrays.',
+    },
+    {
+      name: 'reorderSyncWithDiagnostics(chunks, overrides?)',
+      ret: '{ chunks, diagnostics }',
+      desc: 'Synchronous reorder with diagnostics payload.',
+    },
+    {
+      name: 'reorderWithDiagnostics(chunks, query?, overrides?)',
+      ret: 'Promise<{ chunks, diagnostics }>',
+      desc: 'Async reorder with diagnostics payload.',
     },
     {
       name: 'getConfig()',
@@ -24,10 +34,15 @@ export function ApiReference() {
 
   const standalone = [
     { name: 'scoreChunks(chunks, weights)', desc: 'Compute priority scores from weights + metadata' },
+    { name: 'scoreChunksWithOptions(chunks, weights, opts?)', desc: 'Score chunks with normalization options' },
     { name: 'validateChunks(chunks)', desc: 'Validate chunk array (id, text, score)' },
     { name: 'prepareChunks(chunks, mode?)', desc: 'Validate or coerce chunks' },
     { name: 'validateConfig(config)', desc: 'Validate configuration object' },
     { name: 'mergeConfig(config)', desc: 'Merge partial config with defaults' },
+    { name: 'reordererPresets', desc: 'Opinionated config presets' },
+    { name: 'getPreset(name)', desc: 'Retrieve a preset config copy' },
+    { name: 'tokenCounterFactory(name)', desc: 'Built-in token counters (whitespace/char4)' },
+    { name: 'createTiktokenCounter(opts?)', desc: 'Optional tiktoken-based counter' },
     { name: 'deduplicateChunks(chunks, opts?)', desc: 'Remove exact or fuzzy duplicates' },
     { name: 'deduplicateChunksUnsafe(chunks, opts?)', desc: 'Permissive dedup (coerce)' },
     { name: 'trigramSimilarity(a, b)', desc: 'Trigram Jaccard similarity between two strings' },
@@ -64,6 +79,7 @@ const reorderer = new Reorderer({
   maxChars: 4000,
   charCounter: (text) => Array.from(text).length,
   scoreClamp: [0, 1],
+  diversity: { enabled: true, maxCandidates: 200 },
   validateRerankerOutputOrderByIndex: true,
 });`}</pre>
       </div>
@@ -125,6 +141,7 @@ interface ChunkMetadata {
   sourceId?: string | number | boolean;
   sourceReliability?: number;
   tokenCount?: number;
+  reorderExplain?: ReorderExplain;
   [key: string]: unknown;
 }
 
@@ -142,6 +159,15 @@ interface ReorderConfigExtras {
   validateRerankerOutputOrder?: boolean;
   validateRerankerOutputOrderByIndex?: boolean;
   scoreClamp?: [number, number];
+  diversity?: { enabled?: boolean; maxCandidates?: number };
+  chronologicalOrder?: 'asc' | 'desc';
+  preserveOrderSourceField?: string;
+  scoreNormalization?: 'none' | 'minMax' | 'zScore' | 'softmax';
+  scoreNormalizationTemperature?: number;
+  includeExplain?: boolean;
+  streamingWindowSize?: number;
+  deduplicateLengthBucketSize?: number;
+  deduplicateMaxCandidates?: number;
 }
 
 type Strategy = 'scoreSpread' | 'preserveOrder'
