@@ -389,7 +389,7 @@ export function GlobalStyles() {
         .navbar-link { font-size: 0.72rem; }
       }
 
-      @media (max-width: 1024px) {
+      @media (max-width: 1180px) {
         .navbar-links-desktop { display: none; }
         .navbar-actions { display: none; }
         .navbar-hamburger { display: block; }
@@ -759,7 +759,7 @@ export function GlobalStyles() {
         text-decoration: none;
       }
 
-      @media (max-width: 768px) {
+      @media (max-width: 1024px) {
         .drop-in-grid {
           grid-template-columns: 1fr;
         }

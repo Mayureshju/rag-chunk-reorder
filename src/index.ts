@@ -73,11 +73,17 @@ export {
   reorderLangChainPairs,
   reorderLlamaIndexNodes,
   reorderHaystackDocuments,
+  reorderVercelAIResults,
+  reorderLangGraphState,
+  reorderVectorStoreResults,
 } from './adapters';
 export type {
   LangChainDocumentLike,
   LlamaIndexNodeLike,
   HaystackDocumentLike,
+  VercelAIResultLike,
+  LangGraphStateLike,
+  VectorStoreResultLike,
 } from './adapters';
 
 // Presets
@@ -87,6 +93,31 @@ export type { ReordererPresetName } from './presets';
 // Token counters
 export { tokenCounterFactory, createTiktokenCounter } from './token-counters';
 export type { TokenCounter, TokenCounterWithDispose } from './token-counters';
+
+// Observability
+export {
+  createOtelHooks,
+  createMetricsHooks,
+} from './observability';
+
+// Pipeline helpers
+export {
+  reorderForChatHistory,
+  reorderForDocsQA,
+  reorderForLogs,
+} from './pipelines';
+
+// External rerankers
+export {
+  createCohereReranker,
+  createVoyageReranker,
+  createJinaReranker,
+} from './rerankers';
+export type {
+  CohereRerankerOptions,
+  VoyageRerankerOptions,
+  JinaRerankerOptions,
+} from './rerankers';
 
 // Errors
 export { ValidationError } from './errors';

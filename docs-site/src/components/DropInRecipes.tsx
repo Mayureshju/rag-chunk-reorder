@@ -35,6 +35,25 @@ const reordered = await reorderLangChainDocuments(documents, {
 });`}</pre>
           <a href="#recipes" className="drop-in-link">See full recipe →</a>
         </div>
+
+        <div className="drop-in-card">
+          <div className="drop-in-header">
+            <span className="drop-in-icon">⚡</span>
+            <div>
+              <h3>Vercel AI + Vector DB</h3>
+              <span className="drop-in-lines">12 lines</span>
+            </div>
+          </div>
+          <pre className="drop-in-code">{`import { reorderVercelAIResults } from 'rag-chunk-reorder';
+
+const reordered = await reorderVercelAIResults(results, {
+  query,
+  config: { strategy: 'auto', topK: 8 },
+});
+
+const context = reordered.map(r => r.content).join('\\n\\n');`}</pre>
+          <a href="#recipes" className="drop-in-link">See full recipe →</a>
+        </div>
         
         <div className="drop-in-card">
           <div className="drop-in-header">

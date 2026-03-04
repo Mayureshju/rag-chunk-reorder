@@ -4,6 +4,7 @@ import path from 'path';
 import { Reorderer } from './reorderer';
 import { deserializeChunks } from './serializer';
 import { ReorderConfig } from './types';
+import { evaluateAnswerSet, AnswerEvalCase } from './evaluator';
 
 type Args = {
   input?: string;
@@ -30,6 +31,10 @@ type Args = {
   deduplicate?: boolean;
   deduplicateThreshold?: number;
   deduplicateKeep?: string;
+  diagnosticsOut?: string;
+  bench?: boolean;
+  answers?: string;
+  predictions?: string;
 };
 
 function printHelp() {
@@ -38,6 +43,7 @@ function printHelp() {
 Usage:
   rag-chunk-reorder --input chunks.json --output reordered.json --strategy scoreSpread --topK 10
   rag-chunk-reorder --jsonl --input chunks.jsonl --query "what happened?" --strategy auto
+  rag-chunk-reorder --bench --answers answers.jsonl --predictions preds.jsonl
 
 Options:
   --input, -i              Input file (JSON array or JSONL). Defaults to stdin.
@@ -64,6 +70,10 @@ Options:
   --deduplicate            Enable deduplication.
   --deduplicateThreshold   Fuzzy dedup threshold (0-1).
   --deduplicateKeep        highestScore | first | last
+  --diagnosticsOut         Write diagnostics JSON to this file (reorder-only mode).
+  --bench                  Run answer-level benchmarks instead of reordering.
+  --answers                JSONL file with reference answers (bench mode).
+  --predictions            JSONL file with model predictions (bench mode).
   --help, -h               Show this help.
 `;
   process.stdout.write(text);
@@ -152,6 +162,18 @@ function parseArgs(argv: string[]): Args {
       case '--deduplicateKeep':
         args.deduplicateKeep = argv[++i];
         break;
+      case '--diagnosticsOut':
+        args.diagnosticsOut = argv[++i];
+        break;
+      case '--bench':
+        args.bench = true;
+        break;
+      case '--answers':
+        args.answers = argv[++i];
+        break;
+      case '--predictions':
+        args.predictions = argv[++i];
+        break;
       default:
         if (arg.startsWith('-')) {
           throw new Error(`Unknown argument: ${arg}`);
@@ -194,6 +216,15 @@ function parseChunks(raw: string, jsonl?: boolean) {
   return deserializeChunks(trimmed);
 }
 
+function readJsonlCases(filePath: string): AnswerEvalCase[] {
+  const raw = fs.readFileSync(filePath, 'utf8');
+  const lines = raw
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
+  return lines.map((line) => JSON.parse(line) as AnswerEvalCase);
+}
+
 function writeOutput(output: string, filePath?: string) {
   if (!filePath) {
     process.stdout.write(output);
@@ -206,6 +237,30 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.config === 'help') {
     printHelp();
+    return;
+  }
+
+  if (args.bench) {
+    if (!args.answers || !args.predictions) {
+      throw new Error('--bench requires --answers and --predictions JSONL files');
+    }
+    const answers = readJsonlCases(args.answers);
+    const predictions = readJsonlCases(args.predictions);
+    if (answers.length !== predictions.length) {
+      throw new Error('answers and predictions JSONL files must have the same number of lines');
+    }
+
+    const merged: AnswerEvalCase[] = answers.map((ref, idx) => {
+      const pred = predictions[idx];
+      return {
+        prediction: (pred as AnswerEvalCase).prediction,
+        references: ref.references,
+        contexts: ref.contexts ?? pred.contexts,
+      };
+    });
+
+    const summary = evaluateAnswerSet(merged);
+    process.stdout.write(JSON.stringify(summary, null, 2));
     return;
   }
 
@@ -244,7 +299,14 @@ async function main() {
 
   const raw = readInput(args.input);
   const chunks = parseChunks(raw, args.jsonl);
-  const reorderer = new Reorderer(config);
+  let capturedDiagnostics: unknown | undefined;
+  const reorderer = new Reorderer({
+    ...config,
+    onDiagnostics: (stats) => {
+      capturedDiagnostics = stats;
+      config.onDiagnostics?.(stats);
+    },
+  });
   const result = await reorderer.reorder(chunks, args.query);
 
   const output = args.jsonl
@@ -252,6 +314,10 @@ async function main() {
     : JSON.stringify(result, null, 2);
 
   writeOutput(output, args.output);
+
+  if (args.diagnosticsOut && capturedDiagnostics) {
+    fs.writeFileSync(args.diagnosticsOut, JSON.stringify(capturedDiagnostics, null, 2));
+  }
 }
 
 main().catch((err) => {

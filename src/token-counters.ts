@@ -1,7 +1,11 @@
 export type TokenCounter = (text: string) => number;
 export type TokenCounterWithDispose = TokenCounter & { dispose?: () => void };
 
-type TokenCounterName = 'whitespace' | 'char4';
+type TokenCounterName =
+  | 'whitespace'
+  | 'char4'
+  | 'openai-approx'
+  | 'gemini-approx';
 
 export function tokenCounterFactory(name: TokenCounterName): TokenCounter {
   switch (name) {
@@ -9,6 +13,12 @@ export function tokenCounterFactory(name: TokenCounterName): TokenCounter {
       return (text: string) => (text.trim().length === 0 ? 0 : text.trim().split(/\s+/).length);
     case 'char4':
       return (text: string) => Math.ceil(text.length / 4);
+    case 'openai-approx':
+      // Rough heuristic used in many OpenAI examples: ~4 characters per token.
+      return (text: string) => (text.length === 0 ? 0 : Math.ceil(text.length / 4));
+    case 'gemini-approx':
+      // Gemini docs also recommend ~4 characters per token on average.
+      return (text: string) => (text.length === 0 ? 0 : Math.ceil(text.length / 4));
     default:
       return (text: string) => (text.trim().length === 0 ? 0 : text.trim().split(/\s+/).length);
   }

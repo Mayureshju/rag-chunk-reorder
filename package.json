@@ -14,6 +14,26 @@
         "types": "./dist/cjs/index.d.ts",
         "default": "./dist/cjs/index.js"
       }
+    },
+    "./adapters": {
+      "import": {
+        "types": "./dist/esm/adapters.d.ts",
+        "default": "./dist/esm/adapters.js"
+      },
+      "require": {
+        "types": "./dist/cjs/adapters.d.ts",
+        "default": "./dist/cjs/adapters.js"
+      }
+    },
+    "./rerankers": {
+      "import": {
+        "types": "./dist/esm/rerankers.d.ts",
+        "default": "./dist/esm/rerankers.js"
+      },
+      "require": {
+        "types": "./dist/cjs/rerankers.d.ts",
+        "default": "./dist/cjs/rerankers.js"
+      }
     }
   },
   "bin": {

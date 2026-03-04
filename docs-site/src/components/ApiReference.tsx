@@ -41,7 +41,10 @@ export function ApiReference() {
     { name: 'mergeConfig(config)', desc: 'Merge partial config with defaults' },
     { name: 'reordererPresets', desc: 'Opinionated config presets' },
     { name: 'getPreset(name)', desc: 'Retrieve a preset config copy' },
-    { name: 'tokenCounterFactory(name)', desc: 'Built-in token counters (whitespace/char4)' },
+    { name: 'reorderForChatHistory(chunks, query?, overrides?)', desc: 'Pipeline helper for chat-style histories' },
+    { name: 'reorderForDocsQA(chunks, query?, overrides?)', desc: 'Pipeline helper for docs / KB QA' },
+    { name: 'reorderForLogs(chunks, query?, overrides?)', desc: 'Pipeline helper for logs / event streams' },
+    { name: 'tokenCounterFactory(name)', desc: 'Built-in token counters (whitespace/char4/openai-approx/gemini-approx)' },
     { name: 'createTiktokenCounter(opts?)', desc: 'Optional tiktoken-based counter' },
     { name: 'deduplicateChunks(chunks, opts?)', desc: 'Remove exact or fuzzy duplicates' },
     { name: 'deduplicateChunksUnsafe(chunks, opts?)', desc: 'Permissive dedup (coerce)' },
@@ -65,6 +68,13 @@ export function ApiReference() {
     { name: 'faithfulness(prediction, contexts, opts?)', desc: 'Answer faithfulness to contexts' },
     { name: 'retrievalRecallAtK(retrieved, relevantIds, k?)', desc: 'Retrieval recall@k' },
     { name: 'evaluateAnswerSet(cases)', desc: 'Aggregate answer evaluation' },
+    { name: 'reorderLangChainDocuments(docs, opts?)', desc: 'LangChain adapter for Document[]' },
+    { name: 'reorderLangChainPairs(pairs, opts?)', desc: 'LangChain adapter for [Document, score][]' },
+    { name: 'reorderLlamaIndexNodes(nodes, opts?)', desc: 'LlamaIndex node adapter' },
+    { name: 'reorderHaystackDocuments(docs, opts?)', desc: 'Haystack-style document adapter' },
+    { name: 'reorderVercelAIResults(results, opts?)', desc: 'Vercel AI SDK-style result adapter' },
+    { name: 'reorderLangGraphState(stateChunks, opts?)', desc: 'LangGraph state chunk adapter' },
+    { name: 'reorderVectorStoreResults(rows, opts?)', desc: 'Generic vector DB row adapter' },
   ];
 
   return (

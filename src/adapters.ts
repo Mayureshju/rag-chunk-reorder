@@ -24,6 +24,27 @@ export interface HaystackDocumentLike {
   meta?: Record<string, unknown>;
 }
 
+export interface VercelAIResultLike {
+  id?: string;
+  content: string;
+  score?: number;
+  metadata?: Record<string, unknown>;
+}
+
+export interface LangGraphStateLike {
+  id?: string;
+  content: string;
+  score?: number;
+  metadata?: Record<string, unknown>;
+}
+
+export interface VectorStoreResultLike {
+  id: string | number;
+  content: string;
+  score?: number;
+  metadata?: Record<string, unknown>;
+}
+
 interface AdapterOptions {
   query?: string;
   reorderer?: Reorderer;
@@ -219,3 +240,106 @@ export async function reorderHaystackDocuments<T extends HaystackDocumentLike>(
   );
   return reordered.map((r) => r.value);
 }
+
+/**
+ * Reorder Vercel AI-style RAG results.
+ * Assumes `{ content, score?, metadata? }` shape.
+ */
+export async function reorderVercelAIResults<T extends VercelAIResultLike>(
+  results: T[],
+  options?: AdapterOptions,
+): Promise<T[]> {
+  const reorderer = getReorderer(options);
+  const mode = resolveValidationMode(options);
+
+  const annotated = results.map((item, i) => {
+    const externalId = item.id ?? `va-${i}`;
+    return {
+      __chunkId: buildInternalChunkId(String(externalId), i),
+      item,
+    };
+  });
+
+  const chunks: Chunk[] = annotated.map((wrapper) => ({
+    id: wrapper.__chunkId,
+    text: wrapper.item.content,
+    score: pickScore(wrapper.item.score, undefined, mode, 'VercelAI result'),
+    metadata: resolveMetadata(wrapper.item.metadata, mode, 'VercelAI result'),
+  }));
+
+  const reorderedChunks = await reorderer.reorder(chunks, options?.query);
+  const reordered = reorderItemsByChunkOrder(
+    annotated.map((a) => ({ __chunkId: a.__chunkId, value: a.item })),
+    reorderedChunks,
+  );
+  return reordered.map((r) => r.value);
+}
+
+/**
+ * Reorder LangGraph-style state chunks.
+ * Assumes `{ content, score?, metadata? }` shape.
+ */
+export async function reorderLangGraphState<T extends LangGraphStateLike>(
+  stateChunks: T[],
+  options?: AdapterOptions,
+): Promise<T[]> {
+  const reorderer = getReorderer(options);
+  const mode = resolveValidationMode(options);
+
+  const annotated = stateChunks.map((item, i) => {
+    const externalId = item.id ?? `lg-${i}`;
+    return {
+      __chunkId: buildInternalChunkId(String(externalId), i),
+      item,
+    };
+  });
+
+  const chunks: Chunk[] = annotated.map((wrapper) => ({
+    id: wrapper.__chunkId,
+    text: wrapper.item.content,
+    score: pickScore(wrapper.item.score, undefined, mode, 'LangGraph state'),
+    metadata: resolveMetadata(wrapper.item.metadata, mode, 'LangGraph state'),
+  }));
+
+  const reorderedChunks = await reorderer.reorder(chunks, options?.query);
+  const reordered = reorderItemsByChunkOrder(
+    annotated.map((a) => ({ __chunkId: a.__chunkId, value: a.item })),
+    reorderedChunks,
+  );
+  return reordered.map((r) => r.value);
+}
+
+/**
+ * Reorder generic vector store results.
+ * Assumes `{ id, content, score?, metadata? }` shape.
+ */
+export async function reorderVectorStoreResults<T extends VectorStoreResultLike>(
+  results: T[],
+  options?: AdapterOptions,
+): Promise<T[]> {
+  const reorderer = getReorderer(options);
+  const mode = resolveValidationMode(options);
+
+  const annotated = results.map((item, i) => {
+    const externalId = item.id ?? `vec-${i}`;
+    return {
+      __chunkId: buildInternalChunkId(String(externalId), i),
+      item,
+    };
+  });
+
+  const chunks: Chunk[] = annotated.map((wrapper) => ({
+    id: wrapper.__chunkId,
+    text: wrapper.item.content,
+    score: pickScore(wrapper.item.score, undefined, mode, 'Vector store result'),
+    metadata: resolveMetadata(wrapper.item.metadata, mode, 'Vector store result'),
+  }));
+
+  const reorderedChunks = await reorderer.reorder(chunks, options?.query);
+  const reordered = reorderItemsByChunkOrder(
+    annotated.map((a) => ({ __chunkId: a.__chunkId, value: a.item })),
+    reorderedChunks,
+  );
+  return reordered.map((r) => r.value);
+}
+

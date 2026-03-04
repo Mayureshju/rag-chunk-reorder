@@ -188,6 +188,30 @@ const reordered = reorderer.reorderSync(chunks);
 // Result: highest-scoring chunks at positions 0 and N-1 (primacy/recency bias)
 ```
 
+### Pipeline Helpers (Batteries-Included)
+
+For common RAG patterns you can use opinionated helpers instead of wiring configs by hand:
+
+```typescript
+import {
+  reorderForChatHistory,
+  reorderForDocsQA,
+  reorderForLogs,
+} from 'rag-chunk-reorder';
+
+// Chat-style assistants: scoreSpread + edge-aware packing
+const chatChunks = await reorderForChatHistory(chunks, query);
+
+// Docs QA / KB: auto strategy + fuzzy dedup
+const docsChunks = await reorderForDocsQA(chunks, query, {
+  maxTokens: 4096,
+  tokenCounter: tokenCounterFactory('char4'),
+});
+
+// Logs / events: chronological (latest first)
+const logChunks = await reorderForLogs(chunks);
+```
+
 ---
 
 ## Presets
@@ -962,6 +986,9 @@ First-class adapters are available for framework-shaped objects:
 - `reorderLangChainDocuments()` and `reorderLangChainPairs()`
 - `reorderLlamaIndexNodes()`
 - `reorderHaystackDocuments()`
+ - `reorderVercelAIResults()` for Vercel AI SDK-style results
+ - `reorderLangGraphState()` for LangGraph state chunks
+ - `reorderVectorStoreResults()` for generic vector DB rows
 
 ### Adapter Quickstarts
 
@@ -1079,6 +1106,34 @@ const response = await client.responses.create({
 ```
 
 See [`examples/openai-responses.ts`](examples/openai-responses.ts).
+
+### Vercel AI + Vector Store
+
+```typescript
+import { reorderVercelAIResults } from 'rag-chunk-reorder';
+
+// results: { id?: string; content: string; score?: number; metadata?: any }[]
+const reordered = await reorderVercelAIResults(results, {
+  query,
+  config: { strategy: 'auto', topK: 8 },
+});
+
+const context = reordered.map((r) => r.content).join('\n\n');
+```
+
+### LangGraph State Chunks
+
+```typescript
+import { reorderLangGraphState } from 'rag-chunk-reorder';
+
+// stateChunks: { id?: string; content: string; score?: number; metadata?: any }[]
+const reordered = await reorderLangGraphState(stateChunks, {
+  query,
+  config: { strategy: 'auto', topK: 8 },
+});
+
+const context = reordered.map((c) => c.content).join('\n\n');
+```
 
 ---
 
