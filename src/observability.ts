@@ -40,6 +40,11 @@ export function createOtelHooks(options: CreateOtelHooksOptions): {
   const onDiagnostics = (stats: ReorderDiagnostics) => {
     const span = tracer.startSpan(`${spanName}.diagnostics`);
     try {
+      span.setAttribute('rag.strategy', stats.strategyChosen);
+      span.setAttribute('rag.chunk_count', stats.inputCount);
+      if (stats.queryLength !== undefined) {
+        span.setAttribute('rag.query_length', stats.queryLength);
+      }
       const entries: Array<[string, unknown]> = [
         ['inputCount', stats.inputCount],
         ['validatedCount', stats.validatedCount],
@@ -64,6 +69,15 @@ export function createOtelHooks(options: CreateOtelHooksOptions): {
       ];
       for (const [key, value] of entries) {
         span.setAttribute(`rag.${key}`, value);
+      }
+      if (stats.rerankerFailed !== undefined) {
+        span.setAttribute('rag.rerankerFailed', stats.rerankerFailed);
+      }
+      if (stats.rerankerLatencyMs !== undefined) {
+        span.setAttribute('rag.rerankerLatencyMs', stats.rerankerLatencyMs);
+      }
+      if (stats.rerankerBatches !== undefined) {
+        span.setAttribute('rag.rerankerBatches', stats.rerankerBatches);
       }
       span.addEvent('rag.diagnostics');
     } finally {

@@ -11,7 +11,7 @@ import {
 } from './types';
 import { validateConfig, mergeConfig, MergedReorderConfig } from './config';
 import { prepareChunks } from './validator';
-import { ValidationError } from './errors';
+import { ValidationError, RerankerError } from './errors';
 import { scoreChunksWithOptions } from './scorer';
 import { scoreSpread } from './strategies/score-spread';
 import { preserveOrder } from './strategies/preserve-order';
@@ -532,7 +532,17 @@ export class Reorderer {
     chunks: Chunk[],
     config: MergedReorderConfig,
     query?: string,
-    diagnostics?: { rerankerApplied?: boolean; prepared?: boolean; coercionStats?: CoercionStats },
+    diagnostics?: {
+      rerankerApplied?: boolean;
+      rerankerSkipped?: boolean;
+      rerankerFailed?: boolean;
+      rerankerLatencyMs?: number;
+      rerankerBatches?: number;
+      queryLength?: number;
+      inputTruncated?: boolean;
+      prepared?: boolean;
+      coercionStats?: CoercionStats;
+    },
   ): Chunk[] {
     const fallbackStrategy: Exclude<ReorderConfig['strategy'], 'auto' | undefined> =
       config.strategy === 'auto' ? 'scoreSpread' : config.strategy;
@@ -572,6 +582,8 @@ export class Reorderer {
             filteredByMinScore: 0,
             dedupRemoved: 0,
             rerankerApplied: diagnostics?.rerankerApplied ?? false,
+            rerankerSkipped: diagnostics?.rerankerSkipped ?? false,
+            inputTruncated: false,
             strategyChosen: fallbackStrategy,
             budgetPruned: 0,
             outputCount: 0,
@@ -589,6 +601,28 @@ export class Reorderer {
     let working = diagnostics?.prepared
       ? chunks
       : prepareChunks(chunks, config.validationMode, coercionStats);
+
+    let inputTruncated = false;
+    if (
+      config.maxInputChunks !== undefined &&
+      working.length > config.maxInputChunks
+    ) {
+      const behavior = config.maxInputChunksBehavior ?? 'throw';
+      if (behavior === 'truncate') {
+        working = working.slice(0, config.maxInputChunks);
+        inputTruncated = true;
+      } else {
+        throw new ValidationError(
+          `chunks length (${working.length}) exceeds maxInputChunks (${config.maxInputChunks})`,
+          {
+            step: 'maxInputChunks',
+            chunkCount: working.length,
+            maxInputChunks: config.maxInputChunks,
+          },
+        );
+      }
+    }
+
     const diagnosticsStats: ReorderDiagnostics = {
       inputCount: chunks.length,
       validatedCount: working.length,
@@ -607,6 +641,12 @@ export class Reorderer {
       filteredByMinScore: 0,
       dedupRemoved: 0,
       rerankerApplied: diagnostics?.rerankerApplied ?? false,
+      rerankerSkipped: diagnostics?.rerankerSkipped ?? false,
+      rerankerFailed: diagnostics?.rerankerFailed,
+      rerankerLatencyMs: diagnostics?.rerankerLatencyMs,
+      rerankerBatches: diagnostics?.rerankerBatches,
+      queryLength: diagnostics?.queryLength,
+      inputTruncated: diagnostics?.inputTruncated ?? inputTruncated,
       strategyChosen: fallbackStrategy,
       budgetPruned: 0,
       outputCount: 0,
@@ -639,6 +679,7 @@ export class Reorderer {
         keep: config.deduplicateKeep,
         lengthBucketSize: config.deduplicateLengthBucketSize,
         maxCandidates: config.deduplicateMaxCandidates,
+        validationMode: config.validationMode,
       });
       diagnosticsStats.dedupRemoved = before - working.length;
       if (trace) {
@@ -909,7 +950,10 @@ export class Reorderer {
     const config = this.mergeOverrides(overrides);
 
     if (chunks.length === 0) {
-      return this.executePipelineWithConfig(chunks, config, query, { rerankerApplied: false });
+      return this.executePipelineWithConfig(chunks, config, query, {
+        rerankerApplied: false,
+        rerankerSkipped: !!config.reranker,
+      });
     }
 
     const inputCoercion = createCoercionStats();
@@ -921,7 +965,13 @@ export class Reorderer {
     const validateRerankerOutputOrder = config.validateRerankerOutputOrder !== false;
     const validateRerankerOutputOrderByIndex = config.validateRerankerOutputOrderByIndex === true;
 
+    let rerankerLatencyMs: number | undefined;
+    let rerankerBatches: number | undefined;
+    let rerankerFailed = false;
+
     if (config.reranker && query) {
+      const rerankerStart = getTime();
+      let batchesLength: number | undefined;
       try {
         const { signal, cleanup, abort } = createRerankerSignal(
           config.rerankerAbortSignal,
@@ -933,7 +983,7 @@ export class Reorderer {
           Math.max(1, Math.ceil(workingChunks.length / batchSize)),
         );
         const batches = chunkIntoBatches(workingChunks, batchSize);
-        const rerankerStart = trace ? getTime() : 0;
+        batchesLength = batches.length;
         let lateErrorReported = false;
 
         const reportLateError = (error: unknown) => {
@@ -949,30 +999,47 @@ export class Reorderer {
             throw signal.reason ?? new ValidationError('reranker aborted');
           }
           const results: Chunk[][] = new Array(batches.length);
+          const maxAttempts = 1 + (config.rerankerRetries ?? 0);
+          const retryDelayMs = config.rerankerRetryDelayMs ?? 500;
           let cursor = 0;
           const runBatch = async () => {
             while (cursor < batches.length) {
               const idx = cursor++;
               const batch = batches[idx];
-              const rerankPromise = config.reranker!.rerank(
-                batch,
-                query,
-                signal ? { signal } : undefined,
-              );
-              const rerankResult = config.rerankerTimeoutMs !== undefined
-                ? await withTimeout(
-                    rerankPromise,
-                    config.rerankerTimeoutMs,
-                    () =>
-                      abort(
-                        new ValidationError(
-                          `reranker timed out after ${config.rerankerTimeoutMs}ms`,
-                        ),
-                      ),
-                    reportLateError,
-                  )
-                : await rerankPromise;
-              results[idx] = normalizeRerankerResult(rerankResult);
+              let rerankResult: RerankerResult | undefined;
+              for (let attempt = 0; attempt < maxAttempts; attempt++) {
+                if (signal?.aborted) {
+                  throw signal.reason ?? new ValidationError('reranker aborted');
+                }
+                try {
+                  const rerankPromise = config.reranker!.rerank(
+                    batch,
+                    query,
+                    signal ? { signal } : undefined,
+                  );
+                  rerankResult = config.rerankerTimeoutMs !== undefined
+                    ? await withTimeout(
+                        rerankPromise,
+                        config.rerankerTimeoutMs,
+                        () =>
+                          abort(
+                            new ValidationError(
+                              `reranker timed out after ${config.rerankerTimeoutMs}ms`,
+                            ),
+                          ),
+                        reportLateError,
+                      )
+                    : await rerankPromise;
+                  break;
+                } catch (err) {
+                  const isNonRetryable = err instanceof RerankerError && !err.retryable;
+                  if (isNonRetryable || attempt >= maxAttempts - 1 || signal?.aborted) {
+                    throw err;
+                  }
+                  await new Promise((r) => setTimeout(r, retryDelayMs));
+                }
+              }
+              results[idx] = normalizeRerankerResult(rerankResult!);
             }
           };
 
@@ -1035,9 +1102,11 @@ export class Reorderer {
           workingChunks = prepareChunks(reranked, config.validationMode, rerankCoercion);
           coercionStats = rerankCoercion;
           rerankerApplied = true;
+          rerankerLatencyMs = Math.round(getTime() - rerankerStart);
+          rerankerBatches = batches.length;
           if (trace) {
             try {
-              trace('reranker', getTime() - rerankerStart, {
+              trace('reranker', rerankerLatencyMs, {
                 batches: batches.length,
                 batchSize,
                 concurrency,
@@ -1050,6 +1119,11 @@ export class Reorderer {
           cleanup();
         }
       } catch (error) {
+        rerankerFailed = true;
+        if (config.reranker && query) {
+          rerankerLatencyMs = Math.round(getTime() - rerankerStart);
+          rerankerBatches = batchesLength;
+        }
         if (config.onRerankerError) {
           config.onRerankerError(error);
         }
@@ -1059,6 +1133,11 @@ export class Reorderer {
 
     return this.executePipelineWithConfig(workingChunks, config, query, {
       rerankerApplied,
+      rerankerSkipped: !!(config.reranker && !query),
+      rerankerFailed: rerankerFailed || undefined,
+      rerankerLatencyMs,
+      rerankerBatches,
+      queryLength: query != null ? query.length : undefined,
       prepared: true,
       coercionStats,
     });

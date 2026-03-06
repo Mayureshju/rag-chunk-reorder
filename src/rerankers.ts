@@ -1,10 +1,47 @@
 import { Chunk, Reranker } from './types';
+import { RerankerError } from './errors';
 
 type FetchLike = (input: string, init?: unknown) => Promise<{
   ok: boolean;
   status: number;
   json(): Promise<any>;
+  text(): Promise<string>;
 }>;
+
+const BODY_SNIPPET_MAX = 200;
+
+async function parseErrorBody(response: { status: number; text(): Promise<string> }): Promise<string> {
+  try {
+    const text = await response.text();
+    if (!text || typeof text !== 'string') return '';
+    const trimmed = text.trim();
+    if (trimmed.startsWith('{')) {
+      try {
+        const data = JSON.parse(trimmed) as Record<string, unknown>;
+        const msg = data.message ?? data.error ?? data.msg ?? data.detail;
+        if (typeof msg === 'string') return msg.slice(0, BODY_SNIPPET_MAX);
+        if (typeof msg === 'object' && msg !== null && typeof (msg as { message?: string }).message === 'string') {
+          return ((msg as { message: string }).message).slice(0, BODY_SNIPPET_MAX);
+        }
+      } catch {
+        // ignore JSON parse
+      }
+    }
+    return trimmed.slice(0, BODY_SNIPPET_MAX);
+  } catch {
+    return '';
+  }
+}
+
+async function throwRerankerError(response: { status: number; text(): Promise<string> }, provider: string): Promise<never> {
+  const bodySnippet = await parseErrorBody(response);
+  const status = response.status;
+  const retryable = status >= 500 || status === 408 || status === 429;
+  const message = bodySnippet
+    ? `${provider} rerank failed (${status}): ${bodySnippet}`
+    : `${provider} rerank request failed with status ${status}`;
+  throw new RerankerError(message, { statusCode: status, retryable, bodySnippet: bodySnippet || undefined });
+}
 
 interface BaseRerankerOptions {
   /**
@@ -56,6 +93,10 @@ export interface CohereRerankerOptions extends BaseRerankerOptions {
   baseUrl?: string;
 }
 
+/**
+ * Cohere v2 reranker. If the API returns only a subset of indices (e.g. top-N),
+ * chunks whose index is missing in results keep their original score.
+ */
 export function createCohereReranker(options: CohereRerankerOptions): Reranker {
   const {
     apiKey,
@@ -83,7 +124,6 @@ export function createCohereReranker(options: CohereRerankerOptions): Reranker {
           Authorization: `Bearer ${apiKey}`,
           'Content-Type': 'application/json',
         },
-        // @ts-expect-error AbortSignal typing is intentionally loose to avoid DOM dependency.
         signal: rerankOptions?.signal?.aborted ? undefined : rerankOptions?.signal,
         body: JSON.stringify({
           model,
@@ -94,12 +134,18 @@ export function createCohereReranker(options: CohereRerankerOptions): Reranker {
       } as any);
 
       if (!response.ok) {
-        throw new Error(`Cohere rerank request failed with status ${response.status}`);
+        await throwRerankerError(response, 'Cohere');
       }
 
-      const data = (await response.json()) as {
-        results?: Array<{ index: number; relevance_score: number }>;
-      };
+      let data: { results?: Array<{ index: number; relevance_score: number }> };
+      try {
+        data = (await response.json()) as { results?: Array<{ index: number; relevance_score: number }> };
+      } catch (e) {
+        throw new RerankerError(
+          `Cohere rerank response was not valid JSON: ${(e as Error).message}`,
+          { retryable: true },
+        );
+      }
 
       if (!data.results || !Array.isArray(data.results)) {
         // Provider did not return usable scores; fall back to original chunks.
@@ -141,6 +187,10 @@ export interface VoyageRerankerOptions extends BaseRerankerOptions {
   baseUrl?: string;
 }
 
+/**
+ * Voyage reranker. If the API returns only a subset of indices (e.g. top-K),
+ * chunks whose index is missing in results keep their original score.
+ */
 export function createVoyageReranker(options: VoyageRerankerOptions): Reranker {
   const {
     apiKey,
@@ -167,7 +217,6 @@ export function createVoyageReranker(options: VoyageRerankerOptions): Reranker {
           Authorization: `Bearer ${apiKey}`,
           'Content-Type': 'application/json',
         },
-        // @ts-expect-error AbortSignal typing is intentionally loose to avoid DOM dependency.
         signal: rerankOptions?.signal?.aborted ? undefined : rerankOptions?.signal,
         body: JSON.stringify({
           model,
@@ -179,12 +228,18 @@ export function createVoyageReranker(options: VoyageRerankerOptions): Reranker {
       } as any);
 
       if (!response.ok) {
-        throw new Error(`Voyage rerank request failed with status ${response.status}`);
+        await throwRerankerError(response, 'Voyage');
       }
 
-      const data = (await response.json()) as {
-        results?: Array<{ index: number; relevance_score: number }>;
-      };
+      let data: { results?: Array<{ index: number; relevance_score: number }> };
+      try {
+        data = (await response.json()) as { results?: Array<{ index: number; relevance_score: number }> };
+      } catch (e) {
+        throw new RerankerError(
+          `Voyage rerank response was not valid JSON: ${(e as Error).message}`,
+          { retryable: true },
+        );
+      }
 
       if (!data.results || !Array.isArray(data.results)) {
         return chunks;
@@ -225,6 +280,10 @@ export interface JinaRerankerOptions extends BaseRerankerOptions {
   baseUrl?: string;
 }
 
+/**
+ * Jina reranker. If the API returns only a subset of indices (e.g. top-N),
+ * chunks whose index is missing in results keep their original score.
+ */
 export function createJinaReranker(options: JinaRerankerOptions): Reranker {
   const {
     apiKey,
@@ -251,7 +310,6 @@ export function createJinaReranker(options: JinaRerankerOptions): Reranker {
           Authorization: `Bearer ${apiKey}`,
           'Content-Type': 'application/json',
         },
-        // @ts-expect-error AbortSignal typing is intentionally loose to avoid DOM dependency.
         signal: rerankOptions?.signal?.aborted ? undefined : rerankOptions?.signal,
         body: JSON.stringify({
           model,
@@ -262,12 +320,18 @@ export function createJinaReranker(options: JinaRerankerOptions): Reranker {
       } as any);
 
       if (!response.ok) {
-        throw new Error(`Jina rerank request failed with status ${response.status}`);
+        await throwRerankerError(response, 'Jina');
       }
 
-      const data = (await response.json()) as {
-        results?: Array<{ index: number; relevance_score: number }>;
-      };
+      let data: { results?: Array<{ index: number; relevance_score: number }> };
+      try {
+        data = (await response.json()) as { results?: Array<{ index: number; relevance_score: number }> };
+      } catch (e) {
+        throw new RerankerError(
+          `Jina rerank response was not valid JSON: ${(e as Error).message}`,
+          { retryable: true },
+        );
+      }
 
       if (!data.results || !Array.isArray(data.results)) {
         return chunks;

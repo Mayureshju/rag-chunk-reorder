@@ -52,6 +52,10 @@ async function loadTiktokenModule(): Promise<Record<string, unknown> | undefined
   }
 }
 
+/**
+ * Create a tiktoken-based token counter. Reusing one counter per process is
+ * preferred over creating a new one per request.
+ */
 export async function createTiktokenCounter(options?: {
   model?: string;
   encoding?: string;

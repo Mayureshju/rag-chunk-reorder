@@ -21,6 +21,16 @@ Context-aware chunk reordering for RAG pipelines. Mitigates the **lost-in-the-mi
 
 **Quick links:** [Docs](https://resonant-parfait-d49e6a.netlify.app) · [GitHub](https://github.com/Mayureshju/rag-chunk-reorder) · [npm](https://www.npmjs.com/package/rag-chunk-reorder)
 
+**Get started in 60 seconds:**
+
+```typescript
+import { Reorderer } from 'rag-chunk-reorder';
+
+const reorderer = new Reorderer({ strategy: 'scoreSpread', topK: 8 });
+const reordered = reorderer.reorderSync(chunks);
+// High-relevance chunks land at start and end of context (fixes lost-in-the-middle)
+```
+
 ---
 
 ## Table of Contents
@@ -47,6 +57,7 @@ Context-aware chunk reordering for RAG pipelines. Mitigates the **lost-in-the-mi
 - [Gotchas](#gotchas)
 - [Requirements](#requirements)
 - [Release Cadence](#release-cadence)
+- [Changelog](#changelog)
 - [License](#license)
 
 ---
@@ -172,6 +183,8 @@ pnpm add rag-chunk-reorder
 
 ## Quick Start
 
+**One line for docs QA:** `const chunks = await reorderForDocsQA(retrievedChunks, query, { topK: 8 });`
+
 ```typescript
 import { Reorderer } from 'rag-chunk-reorder';
 
@@ -244,7 +257,7 @@ const reorderer = new Reorderer({
 });
 ```
 
-Optional tiktoken-based counter (if `@dqbd/tiktoken` or `tiktoken` is installed):
+For accurate token counts, install `@dqbd/tiktoken` or `tiktoken`. Optional tiktoken-based counter:
 
 ```typescript
 import { createTiktokenCounter, Reorderer } from 'rag-chunk-reorder';
@@ -890,6 +903,8 @@ const answerSummary = evaluateAnswerSet([
 ]);
 ```
 
+**Quick eval on a small fixture:** run `evaluateAnswerSet(cases)` or `ndcg(scores)` to get measurable metrics; the package is eval-friendly for before/after comparisons.
+
 For dataset-level before/after evaluations, see `examples/eval-cli.js` with a JSONL dataset
 like `examples/data/sample-eval.jsonl`. Use `--report eval-report.md` to generate a markdown
 summary suitable for README updates.
@@ -931,7 +946,8 @@ The reordering pipeline processes chunks in this order:
 - **For large datasets (>500 chunks)**: Use exact dedup or pre-filter
 - **Diversity rerank at scale**: Set `diversity.maxCandidates` to bound MMR cost (e.g., 200–500)
 - **Token budget**: Set `maxTokens` to avoid context overflow
-- **Streaming**: Use `reorderStream()` with `streamingWindowSize` for windowed processing of large result sets
+- **Streaming**: Use `reorderStream()` with `streamingWindowSize` (default 128); for very long streams, increasing it can improve ordering quality at the cost of memory
+- **Diversity at scale**: For >500 chunks, keep `maxCandidates` (e.g. 200–300) to bound latency
 
 ---
 
@@ -980,6 +996,10 @@ The reordering pipeline processes chunks in this order:
 ---
 
 ## Integrations
+
+**Ecosystem:** Use with [LangChain](examples/langchain.ts) · [LlamaIndex](examples/llamaindex.ts) · [Vercel AI](https://www.npmjs.com/package/rag-chunk-reorder#vercel-ai--vector-store) (`reorderVercelAIResults`) · [Haystack](examples/haystack.ts) · [Pinecone](examples/langchain-pinecone.ts) · [Qdrant](examples/llamaindex-qdrant.ts).
+
+**Works with:** [Pinecone](https://www.pinecone.io/), [Qdrant](https://qdrant.tech/), [OpenAI](https://platform.openai.com/), [Cohere](https://cohere.com/), [Vercel AI](https://sdk.vercel.ai/), and any RAG or vector pipeline.
 
 First-class adapters are available for framework-shaped objects:
 
@@ -1169,6 +1189,12 @@ Position effectiveness improves consistently because high-priority chunks are pu
 ## Release Cadence
 
 Weekly release PRs are prepared automatically, with changelog updates in `CHANGELOG.md`. Tags drive npm publishing with provenance.
+
+---
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for version history and upgrade notes.
 
 ---
 

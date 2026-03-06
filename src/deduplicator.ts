@@ -70,6 +70,7 @@ function buildTrigrams(text: string): Set<string> {
  * - 'highestScore' (default): keep the chunk with the highest relevance score
  * - 'first': keep the first occurrence in the input array
  * - 'last': keep the last occurrence in the input array
+ * Output order is by the survivor's original index (earliest for 'first', latest for 'last').
  */
 export function deduplicateChunks(chunks: Chunk[], options?: DeduplicateOptions): Chunk[] {
   const threshold = options?.threshold ?? 1.0;

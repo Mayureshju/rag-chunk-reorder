@@ -188,6 +188,20 @@ export interface ReorderConfig {
   includeExplain?: boolean;
   /** Streaming window size for reorderStream when given an iterable. Default: 128. */
   streamingWindowSize?: number;
+  /**
+   * Optional cap on input chunk count. When set, reorder throws (or truncates) if chunks.length exceeds this
+   * (avoids accidental O(n²) from fuzzy dedup/diversity or huge reranker calls).
+   */
+  maxInputChunks?: number;
+  /**
+   * When maxInputChunks is exceeded: 'throw' (default) throws; 'truncate' truncates and sets
+   * diagnostics.inputTruncated to true.
+   */
+  maxInputChunksBehavior?: 'throw' | 'truncate';
+  /** Number of retries for reranker calls on failure. Default: 0. Do not retry on 4xx. */
+  rerankerRetries?: number;
+  /** Delay in ms before each reranker retry. Default: 500 when rerankerRetries > 0. */
+  rerankerRetryDelayMs?: number;
   /** Structured diagnostics emitted per reorder call. */
   onDiagnostics?: (stats: ReorderDiagnostics) => void;
   /** Optional per-step timing hook (ms). */
@@ -213,9 +227,35 @@ export interface ReorderDiagnostics {
   filteredByMinScore: number;
   dedupRemoved: number;
   rerankerApplied: boolean;
+  /** True when a reranker was configured but not invoked (e.g. no query). */
+  rerankerSkipped?: boolean;
+  /** True when a reranker was configured but failed (fallback to original scores used). */
+  rerankerFailed?: boolean;
+  /** Reranker total latency in ms (when reranker was invoked). */
+  rerankerLatencyMs?: number;
+  /** Number of reranker batches executed (when reranker was invoked). */
+  rerankerBatches?: number;
+  /** Query length in characters (when query was provided). */
+  queryLength?: number;
+  /** True when input was truncated due to maxInputChunks and maxInputChunksBehavior is 'truncate'. */
+  inputTruncated?: boolean;
   strategyChosen: Exclude<Strategy, 'auto'>;
   budgetPruned: number;
   outputCount: number;
+}
+
+/** Type guard for ReorderDiagnostics so TypeScript can narrow in onDiagnostics without casting. */
+export function isReorderDiagnostics(x: unknown): x is ReorderDiagnostics {
+  if (typeof x !== 'object' || x === null) return false;
+  const o = x as Record<string, unknown>;
+  return (
+    typeof o.inputCount === 'number' &&
+    typeof o.validatedCount === 'number' &&
+    typeof o.outputCount === 'number' &&
+    typeof o.rerankerApplied === 'boolean' &&
+    typeof o.strategyChosen === 'string' &&
+    typeof o.budgetPruned === 'number'
+  );
 }
 
 /** Per-chunk explanation payload when includeExplain is enabled. */
@@ -240,7 +280,11 @@ export interface ReorderResult {
   diagnostics: ReorderDiagnostics;
 }
 
-/** Interface for external rerankers (e.g., cross-encoder models). */
+/**
+ * Interface for external rerankers (e.g., cross-encoder models).
+ * Returned order can be arbitrary; use validateRerankerOutputOrder or
+ * validateRerankerOutputOrderByIndex to enforce input order when required.
+ */
 export interface Reranker {
   /** Refine chunk scores given a query. Returns chunks with updated scores. */
   rerank(

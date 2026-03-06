@@ -3,6 +3,68 @@ import { Chunk, ReorderConfig } from './types';
 
 type PartialConfig = Partial<ReorderConfig>;
 
+/** Overrides most relevant for docs QA / knowledge-base pipelines (topK, maxTokens, strategy, dedup, etc.). */
+export type DocsQAOverrides = Partial<
+  Pick<
+    ReorderConfig,
+    | 'topK'
+    | 'maxTokens'
+    | 'tokenCounter'
+    | 'maxChars'
+    | 'charCounter'
+    | 'strategy'
+    | 'minTopK'
+    | 'deduplicate'
+    | 'deduplicateThreshold'
+    | 'deduplicateKeep'
+    | 'packing'
+    | 'validationMode'
+    | 'maxInputChunks'
+    | 'maxInputChunksBehavior'
+    | 'reranker'
+    | 'onRerankerError'
+    | 'onDiagnostics'
+    | 'onTraceStep'
+  >
+>;
+
+/** Overrides most relevant for chat-style history (topK, maxTokens, startCount, endCount, etc.). */
+export type ChatHistoryOverrides = Partial<
+  Pick<
+    ReorderConfig,
+    | 'topK'
+    | 'maxTokens'
+    | 'tokenCounter'
+    | 'maxChars'
+    | 'charCounter'
+    | 'startCount'
+    | 'endCount'
+    | 'minTopK'
+    | 'packing'
+    | 'validationMode'
+    | 'maxInputChunks'
+    | 'maxInputChunksBehavior'
+    | 'onDiagnostics'
+    | 'onTraceStep'
+  >
+>;
+
+/** Overrides most relevant for logs / time-series (chronologicalOrder, topK, timestamp field, etc.). */
+export type LogsOverrides = Partial<
+  Pick<
+    ReorderConfig,
+    | 'topK'
+    | 'maxTokens'
+    | 'tokenCounter'
+    | 'chronologicalOrder'
+    | 'validationMode'
+    | 'maxInputChunks'
+    | 'maxInputChunksBehavior'
+    | 'onDiagnostics'
+    | 'onTraceStep'
+  >
+>;
+
 function mergeConfigs(base: PartialConfig, overrides?: PartialConfig): ReorderConfig {
   return {
     ...base,
@@ -23,7 +85,7 @@ function mergeConfigs(base: PartialConfig, overrides?: PartialConfig): ReorderCo
 export async function reorderForChatHistory(
   chunks: Chunk[],
   query?: string,
-  overrides?: PartialConfig,
+  overrides?: PartialConfig | ChatHistoryOverrides,
 ): Promise<Chunk[]> {
   const base: PartialConfig = {
     strategy: 'scoreSpread',
@@ -45,7 +107,7 @@ export async function reorderForChatHistory(
 export async function reorderForDocsQA(
   chunks: Chunk[],
   query?: string,
-  overrides?: PartialConfig,
+  overrides?: PartialConfig | DocsQAOverrides,
 ): Promise<Chunk[]> {
   const base: PartialConfig = {
     strategy: 'auto',
@@ -69,7 +131,7 @@ export async function reorderForDocsQA(
 export async function reorderForLogs(
   chunks: Chunk[],
   query?: string,
-  overrides?: PartialConfig,
+  overrides?: PartialConfig | LogsOverrides,
 ): Promise<Chunk[]> {
   const base: PartialConfig = {
     strategy: 'chronological',

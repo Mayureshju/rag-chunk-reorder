@@ -6,6 +6,8 @@ import { deserializeChunks } from './serializer';
 import { ReorderConfig } from './types';
 import { evaluateAnswerSet, AnswerEvalCase } from './evaluator';
 
+declare const __dirname: string;
+
 type Args = {
   input?: string;
   output?: string;
@@ -32,6 +34,7 @@ type Args = {
   deduplicateThreshold?: number;
   deduplicateKeep?: string;
   diagnosticsOut?: string;
+  dryRun?: boolean;
   bench?: boolean;
   answers?: string;
   predictions?: string;
@@ -71,12 +74,26 @@ Options:
   --deduplicateThreshold   Fuzzy dedup threshold (0-1).
   --deduplicateKeep        highestScore | first | last
   --diagnosticsOut         Write diagnostics JSON to this file (reorder-only mode).
+  --dry-run                Validate config and input, run reorder, print diagnostics; do not write output.
   --bench                  Run answer-level benchmarks instead of reordering.
   --answers                JSONL file with reference answers (bench mode).
   --predictions            JSONL file with model predictions (bench mode).
+  --version, -V            Print package version and exit.
   --help, -h               Show this help.
 `;
   process.stdout.write(text);
+}
+
+function getVersion(): string {
+  try {
+    // CJS build (bin) provides __dirname via Node's module wrapper
+    const dir = typeof __dirname !== 'undefined' ? __dirname : process.cwd();
+    const p = path.join(dir, '..', '..', 'package.json');
+    const j = JSON.parse(fs.readFileSync(p, 'utf8')) as { version?: string };
+    return j?.version ?? '0.0.0';
+  } catch {
+    return '0.0.0';
+  }
 }
 
 function parseArgs(argv: string[]): Args {
@@ -87,6 +104,10 @@ function parseArgs(argv: string[]): Args {
       case '--help':
       case '-h':
         args.config = 'help';
+        return args;
+      case '--version':
+      case '-V':
+        args.config = 'version';
         return args;
       case '--input':
       case '-i':
@@ -165,6 +186,9 @@ function parseArgs(argv: string[]): Args {
       case '--diagnosticsOut':
         args.diagnosticsOut = argv[++i];
         break;
+      case '--dry-run':
+        args.dryRun = true;
+        break;
       case '--bench':
         args.bench = true;
         break;
@@ -197,11 +221,11 @@ function parseConfig(raw?: string): ReorderConfig | undefined {
     return JSON.parse(raw) as ReorderConfig;
   }
   const resolved = path.resolve(raw);
-  if (fs.existsSync(resolved)) {
-    const file = fs.readFileSync(resolved, 'utf8');
-    return JSON.parse(file) as ReorderConfig;
+  if (!fs.existsSync(resolved)) {
+    throw new Error(`Config file not found: ${resolved}`);
   }
-  return undefined;
+  const file = fs.readFileSync(resolved, 'utf8');
+  return JSON.parse(file) as ReorderConfig;
 }
 
 function parseChunks(raw: string, jsonl?: boolean) {
@@ -237,6 +261,10 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.config === 'help') {
     printHelp();
+    return;
+  }
+  if (args.config === 'version') {
+    process.stdout.write(getVersion() + '\n');
     return;
   }
 
@@ -308,6 +336,16 @@ async function main() {
     },
   });
   const result = await reorderer.reorder(chunks, args.query);
+
+  if (args.dryRun) {
+    const diagnosticsJson = JSON.stringify(capturedDiagnostics ?? {}, null, 2);
+    if (args.diagnosticsOut) {
+      fs.writeFileSync(args.diagnosticsOut, diagnosticsJson);
+    } else {
+      process.stdout.write(diagnosticsJson + '\n');
+    }
+    return;
+  }
 
   const output = args.jsonl
     ? result.map((c) => JSON.stringify(c)).join('\n') + '\n'

@@ -21,6 +21,7 @@ export type {
   RerankerResult,
   ScoreNormalization,
 } from './types';
+export { isReorderDiagnostics } from './types';
 
 // Core
 export { Reorderer } from './reorderer';
@@ -34,7 +35,8 @@ export { deduplicateChunks, deduplicateChunksUnsafe, trigramSimilarity } from '.
 export type { DeduplicateOptions } from './deduplicator';
 
 // Serialization
-export { serializeChunks, deserializeChunks } from './serializer';
+export { serializeChunks, serializeChunksSafe, deserializeChunks } from './serializer';
+export type { DeserializeChunksOptions } from './serializer';
 
 // Evaluation
 export {
@@ -106,6 +108,7 @@ export {
   reorderForDocsQA,
   reorderForLogs,
 } from './pipelines';
+export type { DocsQAOverrides, ChatHistoryOverrides, LogsOverrides } from './pipelines';
 
 // External rerankers
 export {
@@ -120,4 +123,4 @@ export type {
 } from './rerankers';
 
 // Errors
-export { ValidationError } from './errors';
+export { ValidationError, RerankerError } from './errors';

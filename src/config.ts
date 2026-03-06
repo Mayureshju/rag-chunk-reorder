@@ -419,6 +419,47 @@ export function validateConfig(config: ReorderConfig): void {
       }
     }
   }
+
+  if (config.maxInputChunks !== undefined) {
+    if (
+      typeof config.maxInputChunks !== 'number' ||
+      !Number.isFinite(config.maxInputChunks) ||
+      !Number.isInteger(config.maxInputChunks) ||
+      config.maxInputChunks < 1
+    ) {
+      throw new ValidationError('maxInputChunks must be a positive integer');
+    }
+  }
+
+  if (config.maxInputChunksBehavior !== undefined) {
+    if (config.maxInputChunksBehavior !== 'throw' && config.maxInputChunksBehavior !== 'truncate') {
+      throw new ValidationError("maxInputChunksBehavior must be 'throw' or 'truncate'");
+    }
+    if (config.maxInputChunks === undefined) {
+      throw new ValidationError('maxInputChunksBehavior requires maxInputChunks to be set');
+    }
+  }
+
+  if (config.rerankerRetries !== undefined) {
+    if (
+      typeof config.rerankerRetries !== 'number' ||
+      !Number.isFinite(config.rerankerRetries) ||
+      !Number.isInteger(config.rerankerRetries) ||
+      config.rerankerRetries < 0
+    ) {
+      throw new ValidationError('rerankerRetries must be a non-negative integer');
+    }
+  }
+
+  if (config.rerankerRetryDelayMs !== undefined) {
+    if (
+      typeof config.rerankerRetryDelayMs !== 'number' ||
+      !Number.isFinite(config.rerankerRetryDelayMs) ||
+      config.rerankerRetryDelayMs < 0
+    ) {
+      throw new ValidationError('rerankerRetryDelayMs must be a non-negative finite number');
+    }
+  }
 }
 
 /**
@@ -482,6 +523,11 @@ export function mergeConfig(config?: Partial<ReorderConfig>): MergedReorderConfi
     packing: config?.packing ?? 'auto',
     validationMode: config?.validationMode ?? 'strict',
     streamingWindowSize: config?.streamingWindowSize ?? 128,
+    maxInputChunks: config?.maxInputChunks,
+    maxInputChunksBehavior:
+      config?.maxInputChunksBehavior ?? (config?.maxInputChunks != null ? 'throw' : undefined),
+    rerankerRetries: config?.rerankerRetries ?? 0,
+    rerankerRetryDelayMs: config?.rerankerRetryDelayMs ?? 500,
   };
   return merged;
 }
