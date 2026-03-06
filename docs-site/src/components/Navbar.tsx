@@ -1,21 +1,26 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 
-const links = [
+const primaryLinks = [
   { id: 'problem', label: 'Problem' },
   { id: 'solution', label: 'Solution' },
   { id: 'demo', label: 'Demo' },
+  { id: 'features', label: 'Features' },
+  { id: 'api', label: 'API' },
+  { id: 'install', label: 'Install' },
+];
+
+const moreLinks = [
   { id: 'demo-clip', label: 'Result' },
   { id: 'strategies', label: 'Strategies' },
   { id: 'recipes', label: 'Recipes' },
   { id: 'drop-in-recipes', label: 'Drop-In' },
   { id: 'used-by', label: 'Used By' },
   { id: 'pipeline', label: 'Pipeline' },
-  { id: 'features', label: 'Features' },
   { id: 'benchmarks', label: 'Benchmarks' },
   { id: 'social-proof', label: 'Proof' },
-  { id: 'install', label: 'Install' },
-  { id: 'api', label: 'API' },
 ];
+
+const allLinks = [...primaryLinks, ...moreLinks];
 
 function HamburgerIcon({ isOpen }: { isOpen: boolean }) {
   return (
@@ -45,13 +50,42 @@ function HamburgerIcon({ isOpen }: { isOpen: boolean }) {
   );
 }
 
+function ChevronDown({ open }: { open: boolean }) {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}
+    >
+      <polyline points="6 9 12 15 18 9" />
+    </svg>
+  );
+}
+
 export function Navbar({ active, onNavigate }: { active: string; onNavigate: (id: string) => void }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreRef = useRef<HTMLDivElement>(null);
 
   const handleNavClick = (id: string) => {
     onNavigate(id);
     setMobileMenuOpen(false);
+    setMoreOpen(false);
   };
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (moreRef.current && !moreRef.current.contains(e.target as Node)) {
+        setMoreOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   return (
     <nav className="navbar">
@@ -59,17 +93,44 @@ export function Navbar({ active, onNavigate }: { active: string; onNavigate: (id
         <a href="#hero" onClick={() => handleNavClick('hero')} className="navbar-brand">
           rag-chunk-reorder
         </a>
-        
-        {/* Desktop links */}
+
+        {/* Desktop: primary links + More dropdown */}
         <div className="navbar-links navbar-links-desktop">
-          {links.map(l => (
-            <a key={l.id} href={`#${l.id}`}
+          {primaryLinks.map((l) => (
+            <a
+              key={l.id}
+              href={`#${l.id}`}
               onClick={() => handleNavClick(l.id)}
               className={`navbar-link ${active === l.id ? 'active' : ''}`}
-            >{l.label}</a>
+            >
+              {l.label}
+            </a>
           ))}
+          <div className="navbar-more-wrapper" ref={moreRef}>
+            <button
+              type="button"
+              className={`navbar-more-btn ${moreOpen ? 'open' : ''}`}
+              onClick={() => setMoreOpen(!moreOpen)}
+              aria-haspopup="true"
+              aria-expanded={moreOpen}
+            >
+              More <ChevronDown open={moreOpen} />
+            </button>
+            <div className={`navbar-more-dropdown ${moreOpen ? 'open' : ''}`}>
+              {moreLinks.map((l) => (
+                <a
+                  key={l.id}
+                  href={`#${l.id}`}
+                  onClick={() => handleNavClick(l.id)}
+                  className={`navbar-more-link ${active === l.id ? 'active' : ''}`}
+                >
+                  {l.label}
+                </a>
+              ))}
+            </div>
+          </div>
         </div>
-        
+
         <div className="navbar-actions">
           <div className="nav-badges">
             <img
@@ -101,7 +162,6 @@ export function Navbar({ active, onNavigate }: { active: string; onNavigate: (id
           </a>
         </div>
 
-        {/* Hamburger button */}
         <button
           className="navbar-hamburger"
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -112,9 +172,9 @@ export function Navbar({ active, onNavigate }: { active: string; onNavigate: (id
         </button>
       </div>
 
-      {/* Mobile menu */}
+      {/* Mobile / compact menu (hamburger) */}
       <div className={`navbar-mobile-menu ${mobileMenuOpen ? 'open' : ''}`}>
-        {links.map(l => (
+        {allLinks.map((l) => (
           <a
             key={l.id}
             href={`#${l.id}`}

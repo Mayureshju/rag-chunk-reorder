@@ -77,8 +77,42 @@ ndcg(scores)`,
     },
     {
       icon: '🧪', title: 'CLI Runner',
-      desc: 'Batch reorder JSON/JSONL with a single command.',
-      code: `rag-chunk-reorder --jsonl --input data.jsonl --topK 8`,
+      desc: 'Batch reorder JSON/JSONL with a single command. Use --dry-run to validate and print diagnostics without writing output.',
+      code: `rag-chunk-reorder --jsonl --input data.jsonl --topK 8
+rag-chunk-reorder --dry-run --input chunks.json`,
+    },
+    {
+      icon: '⚠️', title: 'RerankerError',
+      desc: 'Built-in rerankers throw RerankerError with statusCode, retryable (4xx = false), and bodySnippet. No retry on 4xx when rerankerRetries is set.',
+      code: `import { RerankerError } from 'rag-chunk-reorder';
+onRerankerError: (err) => {
+  if (err instanceof RerankerError && !err.retryable) { ... }
+}`,
+    },
+    {
+      icon: '📊', title: 'Reranker Diagnostics',
+      desc: 'Diagnostics include rerankerLatencyMs, rerankerBatches, rerankerFailed, and queryLength for SLOs and dashboards.',
+      code: `onDiagnostics: (stats) => {
+  console.log(stats.rerankerLatencyMs, stats.rerankerFailed);
+}`,
+    },
+    {
+      icon: '✂️', title: 'Input Truncate',
+      desc: 'Cap input size and optionally truncate instead of throwing: maxInputChunks + maxInputChunksBehavior: "truncate".',
+      code: `maxInputChunks: 500,
+maxInputChunksBehavior: 'truncate',
+// diagnostics.inputTruncated === true when truncated`,
+    },
+    {
+      icon: '📦', title: 'Deserialize + Normalize',
+      desc: 'Deserialize chunks and normalize optional metadata for untrusted payloads.',
+      code: `deserializeChunks(json, { normalizeMetadata: true })`,
+    },
+    {
+      icon: '📐', title: 'Typed Pipeline Overrides',
+      desc: 'DocsQAOverrides, ChatHistoryOverrides, LogsOverrides for better IDE hints on pipeline helpers.',
+      code: `import { reorderForDocsQA, type DocsQAOverrides } from 'rag-chunk-reorder';
+const overrides: DocsQAOverrides = { topK: 8, maxTokens: 4096 };`,
     },
   ];
 

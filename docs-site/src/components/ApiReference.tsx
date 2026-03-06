@@ -50,7 +50,7 @@ export function ApiReference() {
     { name: 'deduplicateChunksUnsafe(chunks, opts?)', desc: 'Permissive dedup (coerce)' },
     { name: 'trigramSimilarity(a, b)', desc: 'Trigram Jaccard similarity between two strings' },
     { name: 'serializeChunks(chunks)', desc: 'Serialize chunks to JSON string' },
-    { name: 'deserializeChunks(json)', desc: 'Deserialize chunks from JSON string' },
+    { name: 'deserializeChunks(json, options?)', desc: 'Deserialize from JSON. options.normalizeMetadata runs prepareChunks(..., "coerce") for untrusted payloads' },
     { name: 'detectQueryIntent(query, autoConfig)', desc: 'Infer factoid/narrative/temporal intent' },
     { name: 'metadataCoverage(chunks)', desc: 'Measure timestamp/source/section coverage' },
     { name: 'resolveAutoStrategy(chunks, query, autoConfig)', desc: 'Pick strategy based on intent + metadata' },
@@ -75,6 +75,15 @@ export function ApiReference() {
     { name: 'reorderVercelAIResults(results, opts?)', desc: 'Vercel AI SDK-style result adapter' },
     { name: 'reorderLangGraphState(stateChunks, opts?)', desc: 'LangGraph state chunk adapter' },
     { name: 'reorderVectorStoreResults(rows, opts?)', desc: 'Generic vector DB row adapter' },
+  ];
+
+  const errorsAndTypes = [
+    { name: 'ValidationError', desc: 'Thrown on invalid config or chunks. Has message and optional context.' },
+    { name: 'RerankerError', desc: 'Thrown by built-in rerankers. statusCode, retryable (4xx=false), bodySnippet.' },
+    { name: 'DocsQAOverrides', desc: 'Typed overrides for reorderForDocsQA (topK, maxTokens, strategy, etc.)' },
+    { name: 'ChatHistoryOverrides', desc: 'Typed overrides for reorderForChatHistory' },
+    { name: 'LogsOverrides', desc: 'Typed overrides for reorderForLogs' },
+    { name: 'DeserializeChunksOptions', desc: 'normalizeMetadata?: boolean for deserializeChunks' },
   ];
 
   return (
@@ -183,7 +192,45 @@ interface ReorderConfigExtras {
 type Strategy = 'scoreSpread' | 'preserveOrder'
   | 'chronological' | 'custom' | 'auto';
 
-type ValidationMode = 'strict' | 'coerce';`}</pre>
+type ValidationMode = 'strict' | 'coerce';
+
+// New: diagnostics include reranker health
+interface ReorderDiagnostics {
+  rerankerLatencyMs?: number;
+  rerankerBatches?: number;
+  rerankerFailed?: boolean;
+  queryLength?: number;
+  inputTruncated?: boolean;
+  // ... plus existing fields
+}
+
+// New: truncate instead of throw when over maxInputChunks
+maxInputChunksBehavior?: 'throw' | 'truncate';`}</pre>
+      </div>
+
+      <div className="card" style={{ marginBottom: 24 }}>
+        <h3 style={{ marginBottom: 16 }}>Errors &amp; Types</h3>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {errorsAndTypes.map((s) => (
+            <div
+              key={s.name}
+              style={{
+                display: 'flex',
+                alignItems: 'baseline',
+                gap: 12,
+                padding: '6px 12px',
+                background: 'var(--bg)',
+                borderRadius: 8,
+                flexWrap: 'wrap',
+              }}
+            >
+              <code style={{ fontSize: '0.8rem', color: 'var(--orange)', border: 'none', background: 'none' }}>
+                {s.name}
+              </code>
+              <span style={{ fontSize: '0.78rem', color: 'var(--text-dim)' }}>{s.desc}</span>
+            </div>
+          ))}
+        </div>
       </div>
     </section>
   );

@@ -82,6 +82,35 @@ const reordered = await reorderLlamaIndexNodes(nodes, {
 });`}</pre>
           <a href="#recipes" className="drop-in-link">See full recipe →</a>
         </div>
+
+        <div className="drop-in-card">
+          <div className="drop-in-header">
+            <span className="drop-in-icon">🏭</span>
+            <div>
+              <h3>Production Setup</h3>
+              <span className="drop-in-lines">Diagnostics + Reranker + OTEL</span>
+            </div>
+          </div>
+          <pre className="drop-in-code">{`import { Reorderer, createOtelHooks, createMetricsHooks } from 'rag-chunk-reorder';
+
+const otel = createOtelHooks({ tracer });
+const reorderer = new Reorderer({
+  maxInputChunks: 500,
+  maxInputChunksBehavior: 'truncate',
+  onDiagnostics: (s) => { otel.onDiagnostics(s); metrics.onDiagnostics(s); },
+  onRerankerError: (err) => console.error('[Reranker]', err),
+  onTraceStep: otel.onTraceStep,
+});
+// See examples/production.ts on GitHub`}</pre>
+          <a
+            href="https://github.com/Mayureshju/rag-chunk-reorder/blob/main/examples/production.ts"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="drop-in-link"
+          >
+            examples/production.ts →
+          </a>
+        </div>
       </div>
 
       <div className="drop-in-cta">

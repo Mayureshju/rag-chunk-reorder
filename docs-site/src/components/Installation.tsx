@@ -85,7 +85,11 @@ const { chunks: output, diagnostics } =
 // Streaming
 for await (const chunk of reorderer.reorderStream(chunks, 'q')) {
   process.stdout.write(chunk.text);
-}`}</pre>
+}
+
+// CLI: validate without writing (--dry-run); config file path must exist
+// rag-chunk-reorder --dry-run --input chunks.json
+// rag-chunk-reorder --config ./config.json --input in.json --output out.json`}</pre>
       </div>
     </section>
   );
