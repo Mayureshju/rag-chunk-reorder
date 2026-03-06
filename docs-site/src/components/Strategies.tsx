@@ -20,19 +20,23 @@ new Reorderer({
       badge: 'OP-RAG',
       badgeClass: 'badge-blue',
       icon: '📄',
-      desc: 'Maintains original document order within each source. Groups by sourceId, sorts by sectionIndex, orders groups by max score.',
+      desc: 'Maintains original document order within each source. Groups by a source field, sorts by sectionIndex, orders groups by max score.',
       visual: ['[wiki] §0 Intro', '[wiki] §1 Louvre', '[wiki] §2 Eiffel', '[geo] §0 Europe', '[food] §0 Cuisine'],
       code: `new Reorderer({ strategy: 'preserveOrder' })
-// Chunks need sourceId + sectionIndex metadata`,
+// Optional custom field:
+new Reorderer({ strategy: 'preserveOrder', preserveOrderSourceField: 'docId' })
+// Chunks need sourceId/docId + sectionIndex metadata`,
     },
     {
       name: 'Chronological',
       badge: 'Time-series',
       badgeClass: 'badge-orange',
       icon: '⏱️',
-      desc: 'Sorts by timestamp ascending. Ideal for event logs, chat transcripts, and any time-ordered data.',
+      desc: 'Sorts by timestamp ascending or descending. Ideal for event logs, chat transcripts, and time-ordered data.',
       visual: ['t=800  Europe', 't=1000 Paris', 't=1100 Louvre', 't=1200 Eiffel', 't=1400 Olympics'],
       code: `new Reorderer({ strategy: 'chronological' })
+// Latest-first:
+new Reorderer({ strategy: 'chronological', chronologicalOrder: 'desc' })
 // Chunks need timestamp metadata`,
     },
     {

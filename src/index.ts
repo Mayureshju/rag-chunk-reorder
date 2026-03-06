@@ -13,15 +13,19 @@ export type {
   ValidationMode,
   ReorderConfig,
   ReorderDiagnostics,
+  ReorderExplain,
+  ReorderResult,
   CoercionStats,
   AbortSignalLike,
   Reranker,
   RerankerResult,
+  ScoreNormalization,
 } from './types';
+export { isReorderDiagnostics } from './types';
 
 // Core
 export { Reorderer } from './reorderer';
-export { scoreChunks } from './scorer';
+export { scoreChunks, scoreChunksWithOptions } from './scorer';
 export { validateConfig, mergeConfig } from './config';
 export type { MergedReorderConfig } from './config';
 export { validateChunks, prepareChunks } from './validator';
@@ -31,7 +35,8 @@ export { deduplicateChunks, deduplicateChunksUnsafe, trigramSimilarity } from '.
 export type { DeduplicateOptions } from './deduplicator';
 
 // Serialization
-export { serializeChunks, deserializeChunks } from './serializer';
+export { serializeChunks, serializeChunksSafe, deserializeChunks } from './serializer';
+export type { DeserializeChunksOptions } from './serializer';
 
 // Evaluation
 export {
@@ -70,12 +75,52 @@ export {
   reorderLangChainPairs,
   reorderLlamaIndexNodes,
   reorderHaystackDocuments,
+  reorderVercelAIResults,
+  reorderLangGraphState,
+  reorderVectorStoreResults,
 } from './adapters';
 export type {
   LangChainDocumentLike,
   LlamaIndexNodeLike,
   HaystackDocumentLike,
+  VercelAIResultLike,
+  LangGraphStateLike,
+  VectorStoreResultLike,
 } from './adapters';
 
+// Presets
+export { reordererPresets, getPreset } from './presets';
+export type { ReordererPresetName } from './presets';
+
+// Token counters
+export { tokenCounterFactory, createTiktokenCounter } from './token-counters';
+export type { TokenCounter, TokenCounterWithDispose } from './token-counters';
+
+// Observability
+export {
+  createOtelHooks,
+  createMetricsHooks,
+} from './observability';
+
+// Pipeline helpers
+export {
+  reorderForChatHistory,
+  reorderForDocsQA,
+  reorderForLogs,
+} from './pipelines';
+export type { DocsQAOverrides, ChatHistoryOverrides, LogsOverrides } from './pipelines';
+
+// External rerankers
+export {
+  createCohereReranker,
+  createVoyageReranker,
+  createJinaReranker,
+} from './rerankers';
+export type {
+  CohereRerankerOptions,
+  VoyageRerankerOptions,
+  JinaRerankerOptions,
+} from './rerankers';
+
 // Errors
-export { ValidationError } from './errors';
+export { ValidationError, RerankerError } from './errors';

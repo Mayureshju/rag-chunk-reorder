@@ -115,6 +115,9 @@ function coerceChunk(rawChunk: unknown, index: number, stats?: CoercionStats): C
  * Throws ValidationError with a descriptive message on the first invalid chunk.
  */
 export function validateChunks(chunks: Chunk[]): void {
+  if (!Array.isArray(chunks)) {
+    throw new ValidationError('chunks must be an array');
+  }
   for (let i = 0; i < chunks.length; i++) {
     const rawChunk = chunks[i] as unknown;
     if (!isPlainObject(rawChunk)) {
@@ -216,6 +219,9 @@ export function prepareChunks(
   mode: ValidationMode = 'strict',
   stats?: CoercionStats,
 ): Chunk[] {
+  if (!Array.isArray(chunks)) {
+    throw new ValidationError('chunks must be an array');
+  }
   if (mode === 'strict') {
     validateChunks(chunks);
     return chunks;

@@ -32,16 +32,35 @@ autoStrategy: {
 }`,
     },
     {
-      icon: '📈', title: 'Diagnostics + Trace',
-      desc: 'Structured per-call stats and step timings for production tuning.',
-      code: `onDiagnostics: (stats) => console.log(stats),
-onTraceStep: (step, ms) =>
-  console.log(step, ms)`,
+      icon: '🧰', title: 'Presets + Token Counters',
+      desc: 'Start fast with presets and built-in token counter helpers.',
+      code: `const preset = reordererPresets.standard;
+const counter = tokenCounterFactory('char4');`,
+    },
+    {
+      icon: '🧾', title: 'Explain Mode',
+      desc: 'Attach per-chunk placement reasons for debugging and audits.',
+      code: `includeExplain: true`,
+    },
+    {
+      icon: '🧩', title: 'Diversity Rerank',
+      desc: 'MMR + source diversity with an optional cap for large retrieval sets.',
+      code: `diversity: {
+  enabled: true,
+  maxCandidates: 200,
+}`,
     },
     {
       icon: '🎚️', title: 'Score Clamp',
       desc: 'Clamp scores to a safe range to prevent outliers from dominating.',
       code: `scoreClamp: [0, 1]`,
+    },
+    {
+      icon: '📈', title: 'Diagnostics + Trace',
+      desc: 'Structured per-call stats and step timings for production tuning.',
+      code: `onDiagnostics: (stats) => console.log(stats),
+onTraceStep: (step, ms) =>
+  console.log(step, ms)`,
     },
     {
       icon: '🔀', title: 'Grouping + Top-K',
@@ -55,6 +74,45 @@ topK: 10`,
       code: `keyPointRecall(keyPoints, texts)
 positionEffectiveness(scored)
 ndcg(scores)`,
+    },
+    {
+      icon: '🧪', title: 'CLI Runner',
+      desc: 'Batch reorder JSON/JSONL with a single command. Use --dry-run to validate and print diagnostics without writing output.',
+      code: `rag-chunk-reorder --jsonl --input data.jsonl --topK 8
+rag-chunk-reorder --dry-run --input chunks.json`,
+    },
+    {
+      icon: '⚠️', title: 'RerankerError',
+      desc: 'Built-in rerankers throw RerankerError with statusCode, retryable (4xx = false), and bodySnippet. No retry on 4xx when rerankerRetries is set.',
+      code: `import { RerankerError } from 'rag-chunk-reorder';
+onRerankerError: (err) => {
+  if (err instanceof RerankerError && !err.retryable) { ... }
+}`,
+    },
+    {
+      icon: '📊', title: 'Reranker Diagnostics',
+      desc: 'Diagnostics include rerankerLatencyMs, rerankerBatches, rerankerFailed, and queryLength for SLOs and dashboards.',
+      code: `onDiagnostics: (stats) => {
+  console.log(stats.rerankerLatencyMs, stats.rerankerFailed);
+}`,
+    },
+    {
+      icon: '✂️', title: 'Input Truncate',
+      desc: 'Cap input size and optionally truncate instead of throwing: maxInputChunks + maxInputChunksBehavior: "truncate".',
+      code: `maxInputChunks: 500,
+maxInputChunksBehavior: 'truncate',
+// diagnostics.inputTruncated === true when truncated`,
+    },
+    {
+      icon: '📦', title: 'Deserialize + Normalize',
+      desc: 'Deserialize chunks and normalize optional metadata for untrusted payloads.',
+      code: `deserializeChunks(json, { normalizeMetadata: true })`,
+    },
+    {
+      icon: '📐', title: 'Typed Pipeline Overrides',
+      desc: 'DocsQAOverrides, ChatHistoryOverrides, LogsOverrides for better IDE hints on pipeline helpers.',
+      code: `import { reorderForDocsQA, type DocsQAOverrides } from 'rag-chunk-reorder';
+const overrides: DocsQAOverrides = { topK: 8, maxTokens: 4096 };`,
     },
   ];
 

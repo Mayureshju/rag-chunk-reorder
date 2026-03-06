@@ -13,7 +13,17 @@ export function ApiReference() {
     {
       name: 'reorderStream(chunks, query?, overrides?)',
       ret: 'AsyncIterable<Chunk>',
-      desc: 'Streaming reorder. Yields chunks one at a time.',
+      desc: 'Streaming reorder. Windowed mode for iterables, full materialization for arrays.',
+    },
+    {
+      name: 'reorderSyncWithDiagnostics(chunks, overrides?)',
+      ret: '{ chunks, diagnostics }',
+      desc: 'Synchronous reorder with diagnostics payload.',
+    },
+    {
+      name: 'reorderWithDiagnostics(chunks, query?, overrides?)',
+      ret: 'Promise<{ chunks, diagnostics }>',
+      desc: 'Async reorder with diagnostics payload.',
     },
     {
       name: 'getConfig()',
@@ -24,15 +34,23 @@ export function ApiReference() {
 
   const standalone = [
     { name: 'scoreChunks(chunks, weights)', desc: 'Compute priority scores from weights + metadata' },
+    { name: 'scoreChunksWithOptions(chunks, weights, opts?)', desc: 'Score chunks with normalization options' },
     { name: 'validateChunks(chunks)', desc: 'Validate chunk array (id, text, score)' },
     { name: 'prepareChunks(chunks, mode?)', desc: 'Validate or coerce chunks' },
     { name: 'validateConfig(config)', desc: 'Validate configuration object' },
     { name: 'mergeConfig(config)', desc: 'Merge partial config with defaults' },
+    { name: 'reordererPresets', desc: 'Opinionated config presets' },
+    { name: 'getPreset(name)', desc: 'Retrieve a preset config copy' },
+    { name: 'reorderForChatHistory(chunks, query?, overrides?)', desc: 'Pipeline helper for chat-style histories' },
+    { name: 'reorderForDocsQA(chunks, query?, overrides?)', desc: 'Pipeline helper for docs / KB QA' },
+    { name: 'reorderForLogs(chunks, query?, overrides?)', desc: 'Pipeline helper for logs / event streams' },
+    { name: 'tokenCounterFactory(name)', desc: 'Built-in token counters (whitespace/char4/openai-approx/gemini-approx)' },
+    { name: 'createTiktokenCounter(opts?)', desc: 'Optional tiktoken-based counter' },
     { name: 'deduplicateChunks(chunks, opts?)', desc: 'Remove exact or fuzzy duplicates' },
     { name: 'deduplicateChunksUnsafe(chunks, opts?)', desc: 'Permissive dedup (coerce)' },
     { name: 'trigramSimilarity(a, b)', desc: 'Trigram Jaccard similarity between two strings' },
     { name: 'serializeChunks(chunks)', desc: 'Serialize chunks to JSON string' },
-    { name: 'deserializeChunks(json)', desc: 'Deserialize chunks from JSON string' },
+    { name: 'deserializeChunks(json, options?)', desc: 'Deserialize from JSON. options.normalizeMetadata runs prepareChunks(..., "coerce") for untrusted payloads' },
     { name: 'detectQueryIntent(query, autoConfig)', desc: 'Infer factoid/narrative/temporal intent' },
     { name: 'metadataCoverage(chunks)', desc: 'Measure timestamp/source/section coverage' },
     { name: 'resolveAutoStrategy(chunks, query, autoConfig)', desc: 'Pick strategy based on intent + metadata' },
@@ -50,6 +68,22 @@ export function ApiReference() {
     { name: 'faithfulness(prediction, contexts, opts?)', desc: 'Answer faithfulness to contexts' },
     { name: 'retrievalRecallAtK(retrieved, relevantIds, k?)', desc: 'Retrieval recall@k' },
     { name: 'evaluateAnswerSet(cases)', desc: 'Aggregate answer evaluation' },
+    { name: 'reorderLangChainDocuments(docs, opts?)', desc: 'LangChain adapter for Document[]' },
+    { name: 'reorderLangChainPairs(pairs, opts?)', desc: 'LangChain adapter for [Document, score][]' },
+    { name: 'reorderLlamaIndexNodes(nodes, opts?)', desc: 'LlamaIndex node adapter' },
+    { name: 'reorderHaystackDocuments(docs, opts?)', desc: 'Haystack-style document adapter' },
+    { name: 'reorderVercelAIResults(results, opts?)', desc: 'Vercel AI SDK-style result adapter' },
+    { name: 'reorderLangGraphState(stateChunks, opts?)', desc: 'LangGraph state chunk adapter' },
+    { name: 'reorderVectorStoreResults(rows, opts?)', desc: 'Generic vector DB row adapter' },
+  ];
+
+  const errorsAndTypes = [
+    { name: 'ValidationError', desc: 'Thrown on invalid config or chunks. Has message and optional context.' },
+    { name: 'RerankerError', desc: 'Thrown by built-in rerankers. statusCode, retryable (4xx=false), bodySnippet.' },
+    { name: 'DocsQAOverrides', desc: 'Typed overrides for reorderForDocsQA (topK, maxTokens, strategy, etc.)' },
+    { name: 'ChatHistoryOverrides', desc: 'Typed overrides for reorderForChatHistory' },
+    { name: 'LogsOverrides', desc: 'Typed overrides for reorderForLogs' },
+    { name: 'DeserializeChunksOptions', desc: 'normalizeMetadata?: boolean for deserializeChunks' },
   ];
 
   return (
@@ -64,6 +98,7 @@ const reorderer = new Reorderer({
   maxChars: 4000,
   charCounter: (text) => Array.from(text).length,
   scoreClamp: [0, 1],
+  diversity: { enabled: true, maxCandidates: 200 },
   validateRerankerOutputOrderByIndex: true,
 });`}</pre>
       </div>
@@ -125,6 +160,7 @@ interface ChunkMetadata {
   sourceId?: string | number | boolean;
   sourceReliability?: number;
   tokenCount?: number;
+  reorderExplain?: ReorderExplain;
   [key: string]: unknown;
 }
 
@@ -142,12 +178,59 @@ interface ReorderConfigExtras {
   validateRerankerOutputOrder?: boolean;
   validateRerankerOutputOrderByIndex?: boolean;
   scoreClamp?: [number, number];
+  diversity?: { enabled?: boolean; maxCandidates?: number };
+  chronologicalOrder?: 'asc' | 'desc';
+  preserveOrderSourceField?: string;
+  scoreNormalization?: 'none' | 'minMax' | 'zScore' | 'softmax';
+  scoreNormalizationTemperature?: number;
+  includeExplain?: boolean;
+  streamingWindowSize?: number;
+  deduplicateLengthBucketSize?: number;
+  deduplicateMaxCandidates?: number;
 }
 
 type Strategy = 'scoreSpread' | 'preserveOrder'
   | 'chronological' | 'custom' | 'auto';
 
-type ValidationMode = 'strict' | 'coerce';`}</pre>
+type ValidationMode = 'strict' | 'coerce';
+
+// New: diagnostics include reranker health
+interface ReorderDiagnostics {
+  rerankerLatencyMs?: number;
+  rerankerBatches?: number;
+  rerankerFailed?: boolean;
+  queryLength?: number;
+  inputTruncated?: boolean;
+  // ... plus existing fields
+}
+
+// New: truncate instead of throw when over maxInputChunks
+maxInputChunksBehavior?: 'throw' | 'truncate';`}</pre>
+      </div>
+
+      <div className="card" style={{ marginBottom: 24 }}>
+        <h3 style={{ marginBottom: 16 }}>Errors &amp; Types</h3>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {errorsAndTypes.map((s) => (
+            <div
+              key={s.name}
+              style={{
+                display: 'flex',
+                alignItems: 'baseline',
+                gap: 12,
+                padding: '6px 12px',
+                background: 'var(--bg)',
+                borderRadius: 8,
+                flexWrap: 'wrap',
+              }}
+            >
+              <code style={{ fontSize: '0.8rem', color: 'var(--orange)', border: 'none', background: 'none' }}>
+                {s.name}
+              </code>
+              <span style={{ fontSize: '0.78rem', color: 'var(--text-dim)' }}>{s.desc}</span>
+            </div>
+          ))}
+        </div>
       </div>
     </section>
   );

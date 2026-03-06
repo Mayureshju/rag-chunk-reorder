@@ -4,13 +4,15 @@ import {
   CoercionStats,
   ReorderConfig,
   ReorderDiagnostics,
+  ReorderExplain,
+  ReorderResult,
   RerankerResult,
   ScoredChunk,
 } from './types';
 import { validateConfig, mergeConfig, MergedReorderConfig } from './config';
 import { prepareChunks } from './validator';
-import { ValidationError } from './errors';
-import { scoreChunks } from './scorer';
+import { ValidationError, RerankerError } from './errors';
+import { scoreChunksWithOptions } from './scorer';
 import { scoreSpread } from './strategies/score-spread';
 import { preserveOrder } from './strategies/preserve-order';
 import { chronological } from './strategies/chronological';
@@ -20,10 +22,17 @@ import { deduplicateChunks } from './deduplicator';
 import { resolveAutoStrategy } from './selector';
 import { rerankWithDiversity } from './diversity';
 
-function stripInternalFields(chunk: ScoredChunk, includePriorityScore?: boolean): Chunk {
+function stripInternalFields(
+  chunk: ScoredChunk,
+  includePriorityScore?: boolean,
+  explain?: ReorderExplain,
+): Chunk {
   const { priorityScore, originalIndex: _, ...rest } = chunk;
-  if (includePriorityScore) {
-    return { ...rest, metadata: { ...rest.metadata, priorityScore } };
+  if (includePriorityScore || explain) {
+    const metadata = { ...(rest.metadata ?? {}) } as Record<string, unknown>;
+    if (includePriorityScore) metadata.priorityScore = priorityScore;
+    if (explain) metadata.reorderExplain = explain;
+    return { ...rest, metadata };
   }
   return rest;
 }
@@ -37,9 +46,9 @@ function applyStrategy(
     case 'scoreSpread':
       return scoreSpread(chunks, config.startCount, config.endCount);
     case 'preserveOrder':
-      return preserveOrder(chunks);
+      return preserveOrder(chunks, config.preserveOrderSourceField);
     case 'chronological':
-      return chronological(chunks);
+      return chronological(chunks, config.chronologicalOrder);
     case 'custom':
       return customSort(chunks, config.customComparator!);
     default:
@@ -79,6 +88,91 @@ function takeFromEdges<T>(items: T[], count: number): T[] {
 }
 
 type TokenUsage = { total: number; cached: number };
+
+function normalizeGroupKey(value: unknown): string | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value === 'object' || typeof value === 'function' || typeof value === 'symbol') {
+    return undefined;
+  }
+  const key = String(value);
+  return key.length > 0 ? key : undefined;
+}
+
+function buildExplainPayload(
+  ordered: ScoredChunk[],
+  strategy: Exclude<ReorderConfig['strategy'], 'auto' | undefined>,
+  config: MergedReorderConfig,
+  groupField?: string,
+  groupKeyByChunk?: Map<ScoredChunk, string>,
+): ReorderExplain[] {
+  if (ordered.length === 0) return [];
+
+  const prioritySorted = [...ordered].sort((a, b) => {
+    if (b.priorityScore !== a.priorityScore) return b.priorityScore - a.priorityScore;
+    return a.originalIndex - b.originalIndex;
+  });
+  const priorityRank = new Map<ScoredChunk, number>();
+  for (let i = 0; i < prioritySorted.length; i++) {
+    priorityRank.set(prioritySorted[i], i);
+  }
+
+  const hasCounts =
+    config.startCount !== undefined &&
+    config.endCount !== undefined &&
+    config.startCount + config.endCount < ordered.length;
+
+  return ordered.map((chunk, position) => {
+    let placement: string = strategy;
+    if (strategy === 'scoreSpread') {
+      if (hasCounts) {
+        if (position < config.startCount!) placement = 'scoreSpread:start';
+        else if (position >= ordered.length - config.endCount!) placement = 'scoreSpread:end';
+        else placement = 'scoreSpread:middle';
+      } else {
+        placement = position <= (ordered.length - 1) / 2 ? 'scoreSpread:front' : 'scoreSpread:back';
+      }
+    } else if (strategy === 'preserveOrder') {
+      placement = 'preserveOrder';
+    } else if (strategy === 'chronological') {
+      placement = 'chronological';
+    } else if (strategy === 'custom') {
+      placement = 'custom';
+    }
+
+    const explain: ReorderExplain = {
+      strategy,
+      placement,
+      position,
+      priorityRank: priorityRank.get(chunk),
+      priorityScore: chunk.priorityScore,
+      scoreNormalization: config.scoreNormalization,
+      diversityApplied: !!config.diversity?.enabled,
+    };
+
+    if (groupField) {
+      explain.groupBy = groupField;
+      if (groupKeyByChunk) {
+        explain.groupKey = groupKeyByChunk.get(chunk);
+      } else {
+        explain.groupKey = normalizeGroupKey(chunk.metadata?.[groupField]) ?? '__default__';
+      }
+    }
+
+    if (strategy === 'preserveOrder') {
+      explain.preserveOrderSourceField = config.preserveOrderSourceField ?? 'sourceId';
+      const field = explain.preserveOrderSourceField;
+      explain.groupKey = normalizeGroupKey(chunk.metadata?.[field]) ?? '__default__';
+    }
+
+    if (strategy === 'chronological') {
+      explain.chronologicalOrder = config.chronologicalOrder ?? 'asc';
+      const ts = chunk.metadata?.timestamp;
+      if (typeof ts === 'number' && Number.isFinite(ts)) explain.timestamp = ts;
+    }
+
+    return explain;
+  });
+}
 
 function resolveTokenCount(
   chunk: Chunk,
@@ -438,7 +532,17 @@ export class Reorderer {
     chunks: Chunk[],
     config: MergedReorderConfig,
     query?: string,
-    diagnostics?: { rerankerApplied?: boolean; prepared?: boolean; coercionStats?: CoercionStats },
+    diagnostics?: {
+      rerankerApplied?: boolean;
+      rerankerSkipped?: boolean;
+      rerankerFailed?: boolean;
+      rerankerLatencyMs?: number;
+      rerankerBatches?: number;
+      queryLength?: number;
+      inputTruncated?: boolean;
+      prepared?: boolean;
+      coercionStats?: CoercionStats;
+    },
   ): Chunk[] {
     const fallbackStrategy: Exclude<ReorderConfig['strategy'], 'auto' | undefined> =
       config.strategy === 'auto' ? 'scoreSpread' : config.strategy;
@@ -478,6 +582,8 @@ export class Reorderer {
             filteredByMinScore: 0,
             dedupRemoved: 0,
             rerankerApplied: diagnostics?.rerankerApplied ?? false,
+            rerankerSkipped: diagnostics?.rerankerSkipped ?? false,
+            inputTruncated: false,
             strategyChosen: fallbackStrategy,
             budgetPruned: 0,
             outputCount: 0,
@@ -495,6 +601,28 @@ export class Reorderer {
     let working = diagnostics?.prepared
       ? chunks
       : prepareChunks(chunks, config.validationMode, coercionStats);
+
+    let inputTruncated = false;
+    if (
+      config.maxInputChunks !== undefined &&
+      working.length > config.maxInputChunks
+    ) {
+      const behavior = config.maxInputChunksBehavior ?? 'throw';
+      if (behavior === 'truncate') {
+        working = working.slice(0, config.maxInputChunks);
+        inputTruncated = true;
+      } else {
+        throw new ValidationError(
+          `chunks length (${working.length}) exceeds maxInputChunks (${config.maxInputChunks})`,
+          {
+            step: 'maxInputChunks',
+            chunkCount: working.length,
+            maxInputChunks: config.maxInputChunks,
+          },
+        );
+      }
+    }
+
     const diagnosticsStats: ReorderDiagnostics = {
       inputCount: chunks.length,
       validatedCount: working.length,
@@ -513,6 +641,12 @@ export class Reorderer {
       filteredByMinScore: 0,
       dedupRemoved: 0,
       rerankerApplied: diagnostics?.rerankerApplied ?? false,
+      rerankerSkipped: diagnostics?.rerankerSkipped ?? false,
+      rerankerFailed: diagnostics?.rerankerFailed,
+      rerankerLatencyMs: diagnostics?.rerankerLatencyMs,
+      rerankerBatches: diagnostics?.rerankerBatches,
+      queryLength: diagnostics?.queryLength,
+      inputTruncated: diagnostics?.inputTruncated ?? inputTruncated,
       strategyChosen: fallbackStrategy,
       budgetPruned: 0,
       outputCount: 0,
@@ -543,6 +677,9 @@ export class Reorderer {
       working = deduplicateChunks(working, {
         threshold: config.deduplicateThreshold,
         keep: config.deduplicateKeep,
+        lengthBucketSize: config.deduplicateLengthBucketSize,
+        maxCandidates: config.deduplicateMaxCandidates,
+        validationMode: config.validationMode,
       });
       diagnosticsStats.dedupRemoved = before - working.length;
       if (trace) {
@@ -568,13 +705,16 @@ export class Reorderer {
 
     const resolvedStrategy: Exclude<ReorderConfig['strategy'], 'auto' | undefined> =
       config.strategy === 'auto'
-        ? resolveAutoStrategy(working, query, config.autoStrategy)
+        ? resolveAutoStrategy(working, query, config.autoStrategy, config.preserveOrderSourceField)
         : config.strategy;
     diagnosticsStats.strategyChosen = resolvedStrategy;
     diagnosticsStats.packingStrategyUsed = resolvePacking(config.packing, resolvedStrategy);
 
     const scoreStart = trace ? getTime() : 0;
-    let scored = scoreChunks(working, config.weights);
+    let scored = scoreChunksWithOptions(working, config.weights, {
+      scoreNormalization: config.scoreNormalization,
+      scoreNormalizationTemperature: config.scoreNormalizationTemperature,
+    });
 
     if (config.diversity.enabled) {
       scored = rerankWithDiversity(scored, config.diversity);
@@ -590,13 +730,21 @@ export class Reorderer {
     let result: ScoredChunk[];
 
     const groupField = config.groupBy;
+    const preserveField = config.preserveOrderSourceField ?? 'sourceId';
     const shouldGroup =
       groupField !== undefined &&
-      !(resolvedStrategy === 'preserveOrder' && groupField === 'sourceId');
+      !(resolvedStrategy === 'preserveOrder' && groupField === preserveField);
 
     const strategyStart = trace ? getTime() : 0;
+    let groupKeyByChunk: Map<ScoredChunk, string> | undefined;
     if (shouldGroup && groupField !== undefined) {
       const groups = groupChunks(scored, groupField);
+      groupKeyByChunk = new Map<ScoredChunk, string>();
+      for (const [key, group] of groups) {
+        for (const chunk of group) {
+          groupKeyByChunk.set(chunk, key);
+        }
+      }
       const ordered = orderGroups(groups);
       const reorderedGroups = ordered.map(
         ([key, group]) =>
@@ -614,7 +762,18 @@ export class Reorderer {
       }
     }
 
-    let output = result.map((c) => stripInternalFields(c, config.includePriorityScore));
+    const explainPayload = config.includeExplain
+      ? buildExplainPayload(
+          result,
+          resolvedStrategy,
+          config,
+          shouldGroup ? groupField : undefined,
+          groupKeyByChunk,
+        )
+      : undefined;
+    let output = result.map((c, idx) =>
+      stripInternalFields(c, config.includePriorityScore, explainPayload?.[idx]),
+    );
     const packing = resolvePacking(config.packing, resolvedStrategy);
     const preBudget = output;
     const preBudgetCount = output.length;
@@ -660,6 +819,21 @@ export class Reorderer {
         packing === 'edgeAware'
           ? takeFromEdges(output, config.topK)
           : output.slice(0, config.topK);
+    }
+
+    if (config.includeExplain) {
+      output = output.map((chunk, idx) => {
+        const metadata = chunk.metadata as Record<string, unknown> | undefined;
+        const explain = metadata?.reorderExplain as ReorderExplain | undefined;
+        if (!explain) return chunk;
+        return {
+          ...chunk,
+          metadata: {
+            ...(metadata ?? {}),
+            reorderExplain: { ...explain, position: idx },
+          },
+        };
+      });
     }
 
     if (usedTokenBudget) {
@@ -730,6 +904,43 @@ export class Reorderer {
     return this.executePipelineWithConfig(chunks, this.mergeOverrides(overrides), query);
   }
 
+  /** Synchronous reorder with diagnostics payload. */
+  reorderSyncWithDiagnostics(
+    chunks: Chunk[],
+    overrides?: Partial<ReorderConfig>,
+  ): ReorderResult;
+  reorderSyncWithDiagnostics(
+    chunks: Chunk[],
+    query: string,
+    overrides?: Partial<ReorderConfig>,
+  ): ReorderResult;
+  reorderSyncWithDiagnostics(
+    chunks: Chunk[],
+    queryOrOverrides?: string | Partial<ReorderConfig>,
+    maybeOverrides?: Partial<ReorderConfig>,
+  ): ReorderResult {
+    const query = typeof queryOrOverrides === 'string' ? queryOrOverrides : undefined;
+    const overrides = typeof queryOrOverrides === 'string' ? maybeOverrides : queryOrOverrides;
+
+    let captured: ReorderDiagnostics | undefined;
+    const mergedOverrides: Partial<ReorderConfig> = {
+      ...overrides,
+      onDiagnostics: (stats) => {
+        captured = stats;
+        overrides?.onDiagnostics?.(stats);
+      },
+    };
+
+    const chunksOut =
+      query !== undefined
+        ? this.reorderSync(chunks, query, mergedOverrides)
+        : this.reorderSync(chunks, mergedOverrides);
+    if (!captured) {
+      throw new ValidationError('Diagnostics were not captured');
+    }
+    return { chunks: chunksOut, diagnostics: captured };
+  }
+
   /** Async reorder with optional reranker integration. */
   async reorder(
     chunks: Chunk[],
@@ -739,7 +950,10 @@ export class Reorderer {
     const config = this.mergeOverrides(overrides);
 
     if (chunks.length === 0) {
-      return this.executePipelineWithConfig(chunks, config, query, { rerankerApplied: false });
+      return this.executePipelineWithConfig(chunks, config, query, {
+        rerankerApplied: false,
+        rerankerSkipped: !!config.reranker,
+      });
     }
 
     const inputCoercion = createCoercionStats();
@@ -751,7 +965,13 @@ export class Reorderer {
     const validateRerankerOutputOrder = config.validateRerankerOutputOrder !== false;
     const validateRerankerOutputOrderByIndex = config.validateRerankerOutputOrderByIndex === true;
 
+    let rerankerLatencyMs: number | undefined;
+    let rerankerBatches: number | undefined;
+    let rerankerFailed = false;
+
     if (config.reranker && query) {
+      const rerankerStart = getTime();
+      let batchesLength: number | undefined;
       try {
         const { signal, cleanup, abort } = createRerankerSignal(
           config.rerankerAbortSignal,
@@ -763,7 +983,7 @@ export class Reorderer {
           Math.max(1, Math.ceil(workingChunks.length / batchSize)),
         );
         const batches = chunkIntoBatches(workingChunks, batchSize);
-        const rerankerStart = trace ? getTime() : 0;
+        batchesLength = batches.length;
         let lateErrorReported = false;
 
         const reportLateError = (error: unknown) => {
@@ -779,30 +999,47 @@ export class Reorderer {
             throw signal.reason ?? new ValidationError('reranker aborted');
           }
           const results: Chunk[][] = new Array(batches.length);
+          const maxAttempts = 1 + (config.rerankerRetries ?? 0);
+          const retryDelayMs = config.rerankerRetryDelayMs ?? 500;
           let cursor = 0;
           const runBatch = async () => {
             while (cursor < batches.length) {
               const idx = cursor++;
               const batch = batches[idx];
-              const rerankPromise = config.reranker!.rerank(
-                batch,
-                query,
-                signal ? { signal } : undefined,
-              );
-              const rerankResult = config.rerankerTimeoutMs !== undefined
-                ? await withTimeout(
-                    rerankPromise,
-                    config.rerankerTimeoutMs,
-                    () =>
-                      abort(
-                        new ValidationError(
-                          `reranker timed out after ${config.rerankerTimeoutMs}ms`,
-                        ),
-                      ),
-                    reportLateError,
-                  )
-                : await rerankPromise;
-              results[idx] = normalizeRerankerResult(rerankResult);
+              let rerankResult: RerankerResult | undefined;
+              for (let attempt = 0; attempt < maxAttempts; attempt++) {
+                if (signal?.aborted) {
+                  throw signal.reason ?? new ValidationError('reranker aborted');
+                }
+                try {
+                  const rerankPromise = config.reranker!.rerank(
+                    batch,
+                    query,
+                    signal ? { signal } : undefined,
+                  );
+                  rerankResult = config.rerankerTimeoutMs !== undefined
+                    ? await withTimeout(
+                        rerankPromise,
+                        config.rerankerTimeoutMs,
+                        () =>
+                          abort(
+                            new ValidationError(
+                              `reranker timed out after ${config.rerankerTimeoutMs}ms`,
+                            ),
+                          ),
+                        reportLateError,
+                      )
+                    : await rerankPromise;
+                  break;
+                } catch (err) {
+                  const isNonRetryable = err instanceof RerankerError && !err.retryable;
+                  if (isNonRetryable || attempt >= maxAttempts - 1 || signal?.aborted) {
+                    throw err;
+                  }
+                  await new Promise((r) => setTimeout(r, retryDelayMs));
+                }
+              }
+              results[idx] = normalizeRerankerResult(rerankResult!);
             }
           };
 
@@ -865,9 +1102,11 @@ export class Reorderer {
           workingChunks = prepareChunks(reranked, config.validationMode, rerankCoercion);
           coercionStats = rerankCoercion;
           rerankerApplied = true;
+          rerankerLatencyMs = Math.round(getTime() - rerankerStart);
+          rerankerBatches = batches.length;
           if (trace) {
             try {
-              trace('reranker', getTime() - rerankerStart, {
+              trace('reranker', rerankerLatencyMs, {
                 batches: batches.length,
                 batchSize,
                 concurrency,
@@ -880,6 +1119,11 @@ export class Reorderer {
           cleanup();
         }
       } catch (error) {
+        rerankerFailed = true;
+        if (config.reranker && query) {
+          rerankerLatencyMs = Math.round(getTime() - rerankerStart);
+          rerankerBatches = batchesLength;
+        }
         if (config.onRerankerError) {
           config.onRerankerError(error);
         }
@@ -889,29 +1133,112 @@ export class Reorderer {
 
     return this.executePipelineWithConfig(workingChunks, config, query, {
       rerankerApplied,
+      rerankerSkipped: !!(config.reranker && !query),
+      rerankerFailed: rerankerFailed || undefined,
+      rerankerLatencyMs,
+      rerankerBatches,
+      queryLength: query != null ? query.length : undefined,
       prepared: true,
       coercionStats,
     });
   }
 
-  /**
-   * Streaming reorder. Yields chunks one at a time.
-   *
-   * **Note:** This method materializes the full result internally before yielding.
-   * It does not reduce memory usage or time-to-first-chunk compared to `reorder()`.
-   * True incremental streaming is a planned future enhancement for strategies
-   * that support it (e.g., `preserveOrder`, `chronological`).
-   */
-  async *reorderStream(
+  /** Async reorder with diagnostics payload. */
+  async reorderWithDiagnostics(
     chunks: Chunk[],
     query?: string,
     overrides?: Partial<ReorderConfig>,
+  ): Promise<ReorderResult> {
+    let captured: ReorderDiagnostics | undefined;
+    const mergedOverrides: Partial<ReorderConfig> = {
+      ...overrides,
+      onDiagnostics: (stats) => {
+        captured = stats;
+        overrides?.onDiagnostics?.(stats);
+      },
+    };
+
+    const output = await this.reorder(chunks, query, mergedOverrides);
+    if (!captured) {
+      throw new ValidationError('Diagnostics were not captured');
+    }
+    return { chunks: output, diagnostics: captured };
+  }
+
+  /**
+   * Streaming reorder. Yields chunks one at a time.
+   *
+   * When provided a Chunk[] array, this materializes the full result before yielding.
+   * When provided an Iterable/AsyncIterable, the input is processed in windows to
+   * bound memory. Windowed streaming is approximate and may differ from a global
+   * reorder on the full set.
+   */
+  async *reorderStream(
+    chunks: Chunk[] | Iterable<Chunk> | AsyncIterable<Chunk>,
+    query?: string,
+    overrides?: Partial<ReorderConfig>,
   ): AsyncIterable<Chunk> {
-    // Note: This materializes the full result first, then yields incrementally.
-    // True streaming is only possible for strategies that support incremental output.
-    const result = await this.reorder(chunks, query, overrides);
-    for (const chunk of result) {
-      yield chunk;
+    // Arrays use the existing materialized pipeline.
+    if (Array.isArray(chunks)) {
+      const result = await this.reorder(chunks, query, overrides);
+      for (const chunk of result) {
+        yield chunk;
+      }
+      return;
+    }
+
+    // Iterable/AsyncIterable mode: process in windows to bound memory.
+    const windowSize =
+      overrides?.streamingWindowSize ??
+      this.config.streamingWindowSize ??
+      128;
+    if (!Number.isFinite(windowSize) || windowSize <= 0 || !Number.isInteger(windowSize)) {
+      throw new ValidationError('streamingWindowSize must be a positive integer');
+    }
+
+    const buffer: Chunk[] = [];
+
+    const asyncIterable = chunks as AsyncIterable<Chunk>;
+    if (asyncIterable && typeof asyncIterable[Symbol.asyncIterator] === 'function') {
+      for await (const chunk of asyncIterable) {
+        buffer.push(chunk);
+        if (buffer.length >= windowSize) {
+          const result = await this.reorder(buffer, query, overrides);
+          buffer.length = 0;
+          for (const outChunk of result) {
+            yield outChunk;
+          }
+        }
+      }
+      if (buffer.length > 0) {
+        const result = await this.reorder(buffer, query, overrides);
+        buffer.length = 0;
+        for (const outChunk of result) {
+          yield outChunk;
+        }
+      }
+      return;
+    }
+
+    const iterable = chunks as Iterable<Chunk>;
+    if (iterable && typeof iterable[Symbol.iterator] === 'function') {
+      for (const chunk of iterable) {
+        buffer.push(chunk);
+        if (buffer.length >= windowSize) {
+          const result = await this.reorder(buffer, query, overrides);
+          buffer.length = 0;
+          for (const outChunk of result) {
+            yield outChunk;
+          }
+        }
+      }
+      if (buffer.length > 0) {
+        const result = await this.reorder(buffer, query, overrides);
+        buffer.length = 0;
+        for (const outChunk of result) {
+          yield outChunk;
+        }
+      }
     }
   }
 }

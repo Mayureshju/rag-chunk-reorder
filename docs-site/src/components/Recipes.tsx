@@ -74,6 +74,38 @@ const response = await client.responses.create({
   input: \`Answer using the context:\\n\\n\${context}\\n\\nQ: \${query}\`,
 });`,
   },
+  {
+    title: 'Vercel AI + Vector Store',
+    icon: '⚡',
+    badge: 'DX',
+    badgeColor: 'orange',
+    desc: 'Take retrieved passages from your vector DB and reorder them before passing to the Vercel AI SDK.',
+    code: `import { reorderVercelAIResults } from 'rag-chunk-reorder';
+
+// results: { id?: string; content: string; score?: number; metadata?: any }[]
+const reordered = await reorderVercelAIResults(results, {
+  query,
+  config: { strategy: 'auto', topK: 8 },
+});
+
+const context = reordered.map(r => r.content).join('\\n\\n');`,
+  },
+  {
+    title: 'LangGraph State Chunks',
+    icon: '🧠',
+    badge: 'Graph',
+    badgeColor: 'blue',
+    desc: 'Reorder LangGraph state chunks before building the final prompt in your graph.',
+    code: `import { reorderLangGraphState } from 'rag-chunk-reorder';
+
+// stateChunks: { id?: string; content: string; score?: number; metadata?: any }[]
+const reordered = await reorderLangGraphState(stateChunks, {
+  query,
+  config: { strategy: 'auto', topK: 8 },
+});
+
+const context = reordered.map(c => c.content).join('\\n\\n');`,
+  },
 ];
 
 export function Recipes() {

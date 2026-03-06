@@ -42,7 +42,7 @@ export function GlobalStyles() {
 
       section {
         padding: 80px 24px;
-        max-width: 1100px;
+        max-width: 1500px;
         margin: 0 auto;
         scroll-margin-top: calc(var(--announce-height) + var(--navbar-height) + 24px);
         overflow-x: hidden;
@@ -179,6 +179,7 @@ export function GlobalStyles() {
         backdrop-filter: blur(12px);
         border-bottom: 1px solid var(--border);
         padding: 0 24px;
+        overflow: visible;
       }
 
       .navbar-inner {
@@ -189,6 +190,7 @@ export function GlobalStyles() {
         gap: 12px;
         height: var(--navbar-height);
         min-width: 0;
+        overflow: visible;
       }
 
       .navbar-brand {
@@ -203,7 +205,7 @@ export function GlobalStyles() {
 
       .navbar-links {
         display: flex;
-        gap: 12px;
+        gap: 10px;
         align-items: center;
         flex: 1 1 auto;
         overflow-x: auto;
@@ -216,6 +218,7 @@ export function GlobalStyles() {
 
       .navbar-links-desktop {
         display: flex;
+        overflow: visible;
       }
 
       .navbar-link {
@@ -229,6 +232,78 @@ export function GlobalStyles() {
 
       .navbar-link:hover { color: var(--text); }
       .navbar-link.active { color: var(--accent-light); }
+
+      .navbar-more-wrapper {
+        position: relative;
+        flex-shrink: 0;
+      }
+
+      .navbar-more-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 0.78rem;
+        font-weight: 500;
+        color: var(--text-dim);
+        background: none;
+        border: none;
+        cursor: pointer;
+        padding: 4px 8px;
+        border-radius: 6px;
+        font-family: inherit;
+        transition: color 0.2s, background 0.2s;
+      }
+
+      .navbar-more-btn:hover,
+      .navbar-more-btn.open {
+        color: var(--accent-light);
+        background: rgba(108, 99, 255, 0.1);
+      }
+
+      .navbar-more-dropdown {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        margin-top: 4px;
+        min-width: 140px;
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 8px 0;
+        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+        transform: translateY(-4px);
+        transition: opacity 0.2s, visibility 0.2s, transform 0.2s;
+        z-index: 1100;
+      }
+
+      .navbar-more-dropdown.open {
+        opacity: 1;
+        visibility: visible;
+        pointer-events: auto;
+        transform: translateY(0);
+      }
+
+      .navbar-more-link {
+        display: block;
+        padding: 8px 16px;
+        font-size: 0.82rem;
+        font-weight: 500;
+        color: var(--text-dim);
+        text-decoration: none;
+        transition: color 0.2s, background 0.2s;
+      }
+
+      .navbar-more-link:hover {
+        color: var(--text);
+        background: rgba(108, 99, 255, 0.08);
+      }
+
+      .navbar-more-link.active {
+        color: var(--accent-light);
+      }
 
       .navbar-actions {
         display: flex;
@@ -389,10 +464,10 @@ export function GlobalStyles() {
         .navbar-link { font-size: 0.72rem; }
       }
 
-      @media (max-width: 1024px) {
+      @media (max-width: 1280px) {
         .navbar-links-desktop { display: none; }
         .navbar-actions { display: none; }
-        .navbar-hamburger { display: block; }
+        .navbar-hamburger { display: flex; align-items: center; justify-content: center; }
         .navbar-mobile-menu { display: flex; }
         .navbar-mobile-menu:not(.open) { padding: 0 24px; }
       }
@@ -541,8 +616,9 @@ export function GlobalStyles() {
         margin: 0;
         height: 100%;
         max-height: 280px;
-        overflow-y: auto;
-        overflow-x: auto;
+        overflow: auto;
+        scrollbar-gutter: stable;
+        -webkit-overflow-scrolling: touch;
       }
 
       .recipe-footer {
@@ -606,6 +682,14 @@ export function GlobalStyles() {
         .recipe-title-row h3 {
           font-size: 1rem;
         }
+
+        .recipe-code {
+          max-height: 180px;
+        }
+
+        .drop-in-code {
+          max-height: 180px;
+        }
       }
 
       /* Drop-In Recipes Section */
@@ -628,6 +712,7 @@ export function GlobalStyles() {
         transition: all 0.3s ease;
         display: flex;
         flex-direction: column;
+        min-height: 0;
       }
 
       .drop-in-card:hover {
@@ -667,7 +752,9 @@ export function GlobalStyles() {
         font-size: 0.72rem;
         margin: 0 0 16px 0;
         max-height: 220px;
-        overflow-y: auto;
+        overflow: auto;
+        scrollbar-gutter: stable;
+        -webkit-overflow-scrolling: touch;
         flex: 1;
       }
 
@@ -747,7 +834,7 @@ export function GlobalStyles() {
         text-decoration: none;
       }
 
-      @media (max-width: 768px) {
+      @media (max-width: 1024px) {
         .drop-in-grid {
           grid-template-columns: 1fr;
         }

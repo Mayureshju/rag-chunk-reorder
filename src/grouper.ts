@@ -2,14 +2,21 @@ import { ScoredChunk } from './types';
 
 const DEFAULT_GROUP = '__default__';
 
+function normalizeGroupValue(value: unknown): string | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value === 'object' || typeof value === 'function' || typeof value === 'symbol') {
+    return undefined;
+  }
+  const key = String(value);
+  return key.length > 0 ? key : undefined;
+}
+
 function resolveDefaultGroupKey(chunks: ScoredChunk[], groupByField: string): string {
   const presentKeys = new Set<string>();
 
   for (const chunk of chunks) {
-    const value = chunk.metadata?.[groupByField];
-    if (value !== undefined && value !== null) {
-      presentKeys.add(String(value));
-    }
+    const value = normalizeGroupValue(chunk.metadata?.[groupByField]);
+    if (value !== undefined) presentKeys.add(value);
   }
 
   if (!presentKeys.has(DEFAULT_GROUP)) return DEFAULT_GROUP;
@@ -37,8 +44,8 @@ export function groupChunks(
   const defaultGroupKey = resolveDefaultGroupKey(chunks, groupByField);
 
   for (const chunk of chunks) {
-    const value = chunk.metadata?.[groupByField];
-    const key = value !== undefined && value !== null ? String(value) : defaultGroupKey;
+    const value = normalizeGroupValue(chunk.metadata?.[groupByField]);
+    const key = value ?? defaultGroupKey;
 
     if (!groups.has(key)) {
       groups.set(key, []);

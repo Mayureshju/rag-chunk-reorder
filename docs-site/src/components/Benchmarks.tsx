@@ -1,10 +1,9 @@
 "use client";
 
 const rows = [
-  { metric: 'Position Effectiveness', baseline: 0.62, reordered: 0.78 },
-  { metric: 'Answerability Match', baseline: 0.71, reordered: 0.79 },
-  { metric: 'Citation Coverage', baseline: 0.54, reordered: 0.66 },
-  { metric: 'nDCG', baseline: 0.89, reordered: 0.9 },
+  { metric: 'Key-Point Recall', baseline: 0.75, reordered: 0.75 },
+  { metric: 'Position Effectiveness', baseline: 0.889, reordered: 0.91 },
+  { metric: 'nDCG', baseline: 1.0, reordered: 0.997 },
 ];
 
 function pct(value: number) {
@@ -21,7 +20,7 @@ export function Benchmarks() {
         These are sample results from the included dataset.
       </p>
       <p style={{ marginBottom: 24, fontSize: '0.85rem', color: 'var(--text-dim)' }}>
-        Run the CLI to compute your own numbers. Expect higher position effectiveness with minimal nDCG change.
+        Run <code>npm run bench</code> to compute your own numbers. Expect higher position effectiveness with minimal nDCG change.
       </p>
 
       <div className="card" style={{ marginBottom: 20 }}>
@@ -69,13 +68,13 @@ export function Benchmarks() {
           <div>
             <div style={{ fontSize: '0.8rem', color: 'var(--text-dim)', marginBottom: 6 }}>Baseline</div>
             <div style={{ background: 'var(--bg)', borderRadius: 6, overflow: 'hidden' }}>
-              <div style={{ width: '62%', height: 10, background: 'var(--text-dim)' }} />
+              <div style={{ width: '88.9%', height: 10, background: 'var(--text-dim)' }} />
             </div>
           </div>
           <div>
             <div style={{ fontSize: '0.8rem', color: 'var(--text-dim)', marginBottom: 6 }}>Reordered</div>
             <div style={{ background: 'var(--bg)', borderRadius: 6, overflow: 'hidden' }}>
-              <div style={{ width: '78%', height: 10, background: 'var(--green)' }} />
+              <div style={{ width: '91%', height: 10, background: 'var(--green)' }} />
             </div>
           </div>
         </div>

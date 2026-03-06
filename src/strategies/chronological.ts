@@ -7,13 +7,13 @@ function finiteTimestamp(value: unknown): number | undefined {
 
 /**
  * Chronological reordering strategy.
- * Sorts chunks by timestamp ascending. Breaks ties by priorityScore descending.
+ * Sorts chunks by timestamp ascending (or descending). Breaks ties by priorityScore descending.
  * Chunks missing timestamp are placed at the end.
  *
  * Tie-breaking uses `priorityScore` so optional diversity reranking can influence
  * ordering when timestamps are equal.
  */
-export function chronological(chunks: ScoredChunk[]): ScoredChunk[] {
+export function chronological(chunks: ScoredChunk[], order: 'asc' | 'desc' = 'asc'): ScoredChunk[] {
   if (chunks.length === 0) return [];
 
   return [...chunks].sort((a, b) => {
@@ -25,8 +25,8 @@ export function chronological(chunks: ScoredChunk[]): ScoredChunk[] {
     if (tsA === undefined) return 1;
     if (tsB === undefined) return -1;
 
-    // Sort by timestamp ascending
-    if (tsA !== tsB) return tsA - tsB;
+    // Sort by timestamp
+    if (tsA !== tsB) return order === 'desc' ? tsB - tsA : tsA - tsB;
 
     // Break ties by priorityScore descending
     if (b.priorityScore !== a.priorityScore) return b.priorityScore - a.priorityScore;

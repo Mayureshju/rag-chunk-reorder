@@ -15,17 +15,17 @@ function normalizeSourceId(value: unknown): string {
 
 /**
  * PreserveOrder reordering strategy (OP-RAG).
- * Groups chunks by sourceId and sorts within each group by sectionIndex ascending.
+ * Groups chunks by a source field (default: sourceId) and sorts within each group by sectionIndex ascending.
  * Groups are ordered by their highest priorityScore (most relevant document first).
  * Falls back to originalIndex when sectionIndex is missing.
  */
-export function preserveOrder(chunks: ScoredChunk[]): ScoredChunk[] {
+export function preserveOrder(chunks: ScoredChunk[], sourceField: string = 'sourceId'): ScoredChunk[] {
   if (chunks.length === 0) return [];
 
   // Group by sourceId
   const groups = new Map<string, ScoredChunk[]>();
   for (const chunk of chunks) {
-    const sourceId = normalizeSourceId(chunk.metadata?.sourceId);
+    const sourceId = normalizeSourceId(chunk.metadata?.[sourceField]);
     if (!groups.has(sourceId)) groups.set(sourceId, []);
     groups.get(sourceId)!.push(chunk);
   }

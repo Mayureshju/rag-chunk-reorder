@@ -1,7 +1,7 @@
 {
   "name": "rag-chunk-reorder",
-  "version": "0.1.4",
-  "description": "RAG chunk reordering, retrieval reranking, and context packing to mitigate lost-in-the-middle in LLM context windows",
+  "version": "0.1.7",
+  "description": "RAG chunk reordering, retrieval reranking, and context packing to mitigate lost-in-the-middle in LLM context windows. Drop-in reordering for LangChain, LlamaIndex, Vercel AI, and any RAG pipeline.",
   "main": "dist/cjs/index.js",
   "types": "dist/cjs/index.d.ts",
   "exports": {
@@ -14,7 +14,50 @@
         "types": "./dist/cjs/index.d.ts",
         "default": "./dist/cjs/index.js"
       }
+    },
+    "./adapters": {
+      "import": {
+        "types": "./dist/esm/adapters.d.ts",
+        "default": "./dist/esm/adapters.js"
+      },
+      "require": {
+        "types": "./dist/cjs/adapters.d.ts",
+        "default": "./dist/cjs/adapters.js"
+      }
+    },
+    "./rerankers": {
+      "import": {
+        "types": "./dist/esm/rerankers.d.ts",
+        "default": "./dist/esm/rerankers.js"
+      },
+      "require": {
+        "types": "./dist/cjs/rerankers.d.ts",
+        "default": "./dist/cjs/rerankers.js"
+      }
+    },
+    "./pipelines": {
+      "import": {
+        "types": "./dist/esm/pipelines.d.ts",
+        "default": "./dist/esm/pipelines.js"
+      },
+      "require": {
+        "types": "./dist/cjs/pipelines.d.ts",
+        "default": "./dist/cjs/pipelines.js"
+      }
+    },
+    "./observability": {
+      "import": {
+        "types": "./dist/esm/observability.d.ts",
+        "default": "./dist/esm/observability.js"
+      },
+      "require": {
+        "types": "./dist/cjs/observability.d.ts",
+        "default": "./dist/cjs/observability.js"
+      }
     }
+  },
+  "bin": {
+    "rag-chunk-reorder": "dist/cjs/cli.js"
   },
   "files": [
     "dist"
@@ -30,12 +73,23 @@
   "keywords": [
     "rag",
     "llm",
+    "langchain",
+    "llamaindex",
+    "vercel-ai",
+    "context-window",
+    "op-rag",
+    "cross-encoder",
+    "mmr",
+    "chunking",
+    "retrieval",
+    "rag-pipeline",
+    "nextjs",
+    "vector-search",
     "retrieval-augmented-generation",
     "retrieval-reranking",
     "reranking",
     "rerank",
     "context-packing",
-    "context-window",
     "llm-context",
     "context-reordering",
     "chunk-reordering",
@@ -53,6 +107,18 @@
   },
   "homepage": "https://resonant-parfait-d49e6a.netlify.app",
   "sideEffects": false,
+  "peerDependencies": {
+    "@dqbd/tiktoken": "*",
+    "tiktoken": "*"
+  },
+  "peerDependenciesMeta": {
+    "@dqbd/tiktoken": {
+      "optional": true
+    },
+    "tiktoken": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "@types/jest": "^30.0.0",
     "@typescript-eslint/eslint-plugin": "^8.55.0",

@@ -91,6 +91,20 @@ describe('Diagnostics hook', () => {
     expect(latest?.tokenCountUsed).toBe(0);
     expect(latest?.budgetUnit).toBe('chars');
   });
+
+  it('reorderSyncWithDiagnostics should return diagnostics payload', () => {
+    const reorderer = new Reorderer({ strategy: 'scoreSpread', topK: 2 });
+    const chunks = [
+      { id: 'a', text: 'A', score: 0.9 },
+      { id: 'b', text: 'B', score: 0.8 },
+      { id: 'c', text: 'C', score: 0.7 },
+    ];
+
+    const result = reorderer.reorderSyncWithDiagnostics(chunks);
+    expect(result.chunks.length).toBe(2);
+    expect(result.diagnostics.outputCount).toBe(2);
+    expect(result.diagnostics.strategyChosen).toBe('scoreSpread');
+  });
 });
 
 describe('Validation mode', () => {

@@ -14,6 +14,8 @@ export interface ChunkMetadata {
   sourceReliability?: number;
   /** Optional precomputed token count for faster budgeting */
   tokenCount?: number;
+  /** Optional reorder explanation when includeExplain is enabled */
+  reorderExplain?: ReorderExplain;
   [key: string]: unknown;
 }
 
@@ -45,6 +47,9 @@ export type Strategy = 'scoreSpread' | 'preserveOrder' | 'chronological' | 'cust
 /** Validation behavior for inputs. */
 export type ValidationMode = 'strict' | 'coerce';
 
+/** Score normalization applied to similarity scores before weighting. */
+export type ScoreNormalization = 'none' | 'minMax' | 'zScore' | 'softmax';
+
 /** Query intent used by auto strategy selection. */
 export type QueryIntent = 'factoid' | 'narrative' | 'temporal';
 
@@ -75,6 +80,8 @@ export interface AutoStrategyConfig {
   temporalQueryTerms?: string[];
   /** Case-insensitive terms used to detect narrative intent. */
   narrativeQueryTerms?: string[];
+  /** Optional override intent detector. Return undefined to fall back to term matching. */
+  intentDetector?: (query: string | undefined) => QueryIntent | undefined;
 }
 
 /** Controls diversity-aware reranking before strategy application. */
@@ -87,6 +94,8 @@ export interface DiversityConfig {
   sourceDiversityWeight?: number;
   /** Metadata field used for source diversity. Default: 'sourceId' */
   sourceField?: string;
+  /** Optional cap on candidates to keep diversity reranking bounded. */
+  maxCandidates?: number;
 }
 
 /** Controls how topK/maxTokens budget constraints are applied after reordering. */
@@ -103,8 +112,16 @@ export interface AbortSignalLike {
 export interface ReorderConfig {
   /** Reordering algorithm. Default: 'scoreSpread' */
   strategy?: Strategy;
+  /** Chronological order direction when strategy = 'chronological'. Default: 'asc' */
+  chronologicalOrder?: 'asc' | 'desc';
+  /** Metadata field used by preserveOrder to group chunks. Default: 'sourceId' */
+  preserveOrderSourceField?: string;
   /** Weights for priority score computation. Default: { similarity: 1, time: 0, section: 0 } */
   weights?: Partial<ScoringWeights>;
+  /** Normalize similarity scores before weighting. Default: 'none' */
+  scoreNormalization?: ScoreNormalization;
+  /** Temperature for softmax score normalization. Default: 1.0 */
+  scoreNormalizationTemperature?: number;
   /** Number of top chunks to place at the start (scoreSpread only) */
   startCount?: number;
   /** Number of top chunks to place at the end (scoreSpread only) */
@@ -153,6 +170,10 @@ export interface ReorderConfig {
   deduplicateThreshold?: number;
   /** Strategy for picking the survivor when duplicates are found. Default: 'highestScore'. */
   deduplicateKeep?: 'highestScore' | 'first' | 'last';
+  /** Bucket size for length-based prefiltering in fuzzy dedup (chars). Optional. */
+  deduplicateLengthBucketSize?: number;
+  /** Cap comparisons per chunk in fuzzy dedup. Optional. */
+  deduplicateMaxCandidates?: number;
   /** Maximum number of chunks to return after reordering. Applied after token budget. */
   topK?: number;
   /** Auto strategy controls. Used when strategy is 'auto'. */
@@ -163,6 +184,24 @@ export interface ReorderConfig {
   packing?: PackingStrategy;
   /** Validation mode for inputs. Default: 'strict'. */
   validationMode?: ValidationMode;
+  /** Include a per-chunk explanation payload in output metadata. Default: false. */
+  includeExplain?: boolean;
+  /** Streaming window size for reorderStream when given an iterable. Default: 128. */
+  streamingWindowSize?: number;
+  /**
+   * Optional cap on input chunk count. When set, reorder throws (or truncates) if chunks.length exceeds this
+   * (avoids accidental O(n²) from fuzzy dedup/diversity or huge reranker calls).
+   */
+  maxInputChunks?: number;
+  /**
+   * When maxInputChunks is exceeded: 'throw' (default) throws; 'truncate' truncates and sets
+   * diagnostics.inputTruncated to true.
+   */
+  maxInputChunksBehavior?: 'throw' | 'truncate';
+  /** Number of retries for reranker calls on failure. Default: 0. Do not retry on 4xx. */
+  rerankerRetries?: number;
+  /** Delay in ms before each reranker retry. Default: 500 when rerankerRetries > 0. */
+  rerankerRetryDelayMs?: number;
   /** Structured diagnostics emitted per reorder call. */
   onDiagnostics?: (stats: ReorderDiagnostics) => void;
   /** Optional per-step timing hook (ms). */
@@ -188,12 +227,64 @@ export interface ReorderDiagnostics {
   filteredByMinScore: number;
   dedupRemoved: number;
   rerankerApplied: boolean;
+  /** True when a reranker was configured but not invoked (e.g. no query). */
+  rerankerSkipped?: boolean;
+  /** True when a reranker was configured but failed (fallback to original scores used). */
+  rerankerFailed?: boolean;
+  /** Reranker total latency in ms (when reranker was invoked). */
+  rerankerLatencyMs?: number;
+  /** Number of reranker batches executed (when reranker was invoked). */
+  rerankerBatches?: number;
+  /** Query length in characters (when query was provided). */
+  queryLength?: number;
+  /** True when input was truncated due to maxInputChunks and maxInputChunksBehavior is 'truncate'. */
+  inputTruncated?: boolean;
   strategyChosen: Exclude<Strategy, 'auto'>;
   budgetPruned: number;
   outputCount: number;
 }
 
-/** Interface for external rerankers (e.g., cross-encoder models). */
+/** Type guard for ReorderDiagnostics so TypeScript can narrow in onDiagnostics without casting. */
+export function isReorderDiagnostics(x: unknown): x is ReorderDiagnostics {
+  if (typeof x !== 'object' || x === null) return false;
+  const o = x as Record<string, unknown>;
+  return (
+    typeof o.inputCount === 'number' &&
+    typeof o.validatedCount === 'number' &&
+    typeof o.outputCount === 'number' &&
+    typeof o.rerankerApplied === 'boolean' &&
+    typeof o.strategyChosen === 'string' &&
+    typeof o.budgetPruned === 'number'
+  );
+}
+
+/** Per-chunk explanation payload when includeExplain is enabled. */
+export interface ReorderExplain {
+  strategy: Exclude<Strategy, 'auto'>;
+  placement: string;
+  position: number;
+  priorityRank?: number;
+  priorityScore?: number;
+  groupKey?: string;
+  groupBy?: string;
+  preserveOrderSourceField?: string;
+  chronologicalOrder?: 'asc' | 'desc';
+  timestamp?: number;
+  scoreNormalization?: ScoreNormalization;
+  diversityApplied?: boolean;
+}
+
+/** Reorder result with diagnostics payload. */
+export interface ReorderResult {
+  chunks: Chunk[];
+  diagnostics: ReorderDiagnostics;
+}
+
+/**
+ * Interface for external rerankers (e.g., cross-encoder models).
+ * Returned order can be arbitrary; use validateRerankerOutputOrder or
+ * validateRerankerOutputOrderByIndex to enforce input order when required.
+ */
 export interface Reranker {
   /** Refine chunk scores given a query. Returns chunks with updated scores. */
   rerank(

@@ -89,6 +89,32 @@ describe('Grouper default group key collisions', () => {
     expect(missingEntry![0]).not.toBe('__default__');
     expect(literalEntry![0]).toBe('__default__');
   });
+
+  it('should treat non-primitive group values as missing', () => {
+    const chunks: ScoredChunk[] = [
+      {
+        id: 'object',
+        text: 'object',
+        score: 0.9,
+        priorityScore: 0.9,
+        originalIndex: 0,
+        metadata: { customGroup: { id: 1 } },
+      },
+      {
+        id: 'missing',
+        text: 'missing',
+        score: 0.8,
+        priorityScore: 0.8,
+        originalIndex: 1,
+        metadata: {},
+      },
+    ];
+
+    const groups = groupChunks(chunks, 'customGroup');
+    expect(groups.size).toBe(1);
+    const groupedIds = Array.from(groups.values()).flat().map((c) => c.id).sort();
+    expect(groupedIds).toEqual(['missing', 'object']);
+  });
 });
 
 // Feature: chunk-reordering-library, Property 12: Cross-group ordering by max score

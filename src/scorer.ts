@@ -1,4 +1,4 @@
-import { Chunk, ScoredChunk, ScoringWeights } from './types';
+import { Chunk, ScoredChunk, ScoringWeights, ScoreNormalization } from './types';
 
 function normalize(value: number | undefined, min: number, max: number): number {
   if (value === undefined) return 0;
@@ -27,9 +27,18 @@ function minMax(values: number[]): [number, number] {
  * of relevance score and normalized metadata (timestamp, sectionIndex).
  */
 export function scoreChunks(chunks: Chunk[], weights: ScoringWeights): ScoredChunk[] {
+  return scoreChunksWithOptions(chunks, weights);
+}
+
+export function scoreChunksWithOptions(
+  chunks: Chunk[],
+  weights: ScoringWeights,
+  options?: { scoreNormalization?: ScoreNormalization; scoreNormalizationTemperature?: number },
+): ScoredChunk[] {
   const definedTimestamps: number[] = [];
   const definedSections: number[] = [];
   const definedReliability: number[] = [];
+  const rawScores: number[] = [];
 
   for (const c of chunks) {
     const timestamp = finiteOrUndefined(c.metadata?.timestamp);
@@ -38,11 +47,17 @@ export function scoreChunks(chunks: Chunk[], weights: ScoringWeights): ScoredChu
     if (timestamp !== undefined) definedTimestamps.push(timestamp);
     if (sectionIndex !== undefined) definedSections.push(sectionIndex);
     if (reliability !== undefined) definedReliability.push(reliability);
+    rawScores.push(c.score);
   }
 
   const [minTs, maxTs] = minMax(definedTimestamps);
   const [minSec, maxSec] = minMax(definedSections);
   const [minRel, maxRel] = minMax(definedReliability);
+  const normalizedScores = normalizeScores(
+    rawScores,
+    options?.scoreNormalization ?? 'none',
+    options?.scoreNormalizationTemperature ?? 1.0,
+  );
 
   return chunks.map((chunk, index) => {
     const normalizedTime = normalize(finiteOrUndefined(chunk.metadata?.timestamp), minTs, maxTs);
@@ -56,9 +71,10 @@ export function scoreChunks(chunks: Chunk[], weights: ScoringWeights): ScoredChu
       minRel,
       maxRel,
     );
+    const baseScore = normalizedScores[index];
 
     const priorityScore =
-      chunk.score * weights.similarity +
+      baseScore * weights.similarity +
       normalizedTime * weights.time +
       normalizedSection * weights.section +
       normalizedReliability * weights.sourceReliability;
@@ -69,4 +85,44 @@ export function scoreChunks(chunks: Chunk[], weights: ScoringWeights): ScoredChu
       originalIndex: index,
     };
   });
+}
+
+function normalizeScores(
+  scores: number[],
+  method: ScoreNormalization,
+  temperature: number,
+): number[] {
+  if (scores.length === 0) return [];
+  if (method === 'none') return [...scores];
+
+  if (method === 'minMax') {
+    let min = scores[0];
+    let max = scores[0];
+    for (let i = 1; i < scores.length; i++) {
+      if (scores[i] < min) min = scores[i];
+      if (scores[i] > max) max = scores[i];
+    }
+    if (max === min) return scores.map(() => 1);
+    return scores.map((s) => (s - min) / (max - min));
+  }
+
+  if (method === 'zScore') {
+    const mean = scores.reduce((sum, s) => sum + s, 0) / scores.length;
+    const variance =
+      scores.reduce((sum, s) => sum + (s - mean) * (s - mean), 0) / scores.length;
+    const std = Math.sqrt(variance);
+    if (std === 0) return scores.map(() => 0);
+    return scores.map((s) => (s - mean) / std);
+  }
+
+  // softmax
+  const temp = temperature <= 0 ? 1 : temperature;
+  let max = scores[0];
+  for (let i = 1; i < scores.length; i++) {
+    if (scores[i] > max) max = scores[i];
+  }
+  const exps = scores.map((s) => Math.exp((s - max) / temp));
+  const sum = exps.reduce((acc, v) => acc + v, 0);
+  if (sum === 0) return scores.map(() => 0);
+  return exps.map((v) => v / sum);
 }
